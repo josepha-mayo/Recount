@@ -1,0 +1,109 @@
+name: Import verified standalone Recount
+on:
+  push:
+    branches: [master]
+    paths: [.github/workflows/import-verified-source.yml]
+permissions:
+  contents: write
+concurrency:
+  group: recount-source-import
+  cancel-in-progress: false
+jobs:
+  import:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      ALLOW_ASSEMBLYAI: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Import hash-pinned standalone archive, never the portfolio
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path,PurePosixPath
+          import hashlib,json,stat,time,urllib.request,zipfile,io
+          url='https://github.com/josepha-mayo/Joseph-Portfolio/releases/download/recount-migration-20260917/Recount-Standalone-Source.zip'
+          expected='50a7c1304b7336f2674e6ac9c1ec6d3d8ceee97c30b41bd83f3ce37d2ca66536'
+          raw=None
+          for attempt in range(12):
+              try:
+                  with urllib.request.urlopen(url,timeout=25) as response:raw=response.read(2_000_001)
+                  break
+              except Exception:
+                  if attempt==11:raise
+                  time.sleep(5)
+          assert len(raw)<=2_000_000 and hashlib.sha256(raw).hexdigest()==expected,'source checksum mismatch'
+          manifest={}
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              assert len(z.infolist())==42,'unexpected source member count'
+              for item in z.infolist():
+                  p=PurePosixPath(item.filename)
+                  assert not p.is_absolute() and '..' not in p.parts and p.parts[0]=='Recount'
+                  assert not stat.S_ISLNK(item.external_attr >> 16)
+                  rel=Path(*p.parts[1:]);assert rel.parts[0] not in ['.git','.github'] and str(rel)!='.env'
+                  if rel.exists() and str(rel)!='README.md':raise RuntimeError('Existing non-README content: '+str(rel))
+                  content=z.read(item);manifest[str(rel)]=hashlib.sha256(content).hexdigest()
+                  rel.parent.mkdir(parents=True,exist_ok=True);rel.write_bytes(content)
+          Path('migration').mkdir(exist_ok=True)
+          Path('migration/IMPORT_RECEIPT.json').write_text(json.dumps({'schema':'recount-standalone-import-1','source_archive_sha256':expected,'source_file_count':42,'source_files':manifest,'historical_provider_run':35279755338,'runtime_modified':False,'provider_calls_during_import':0,'human_recordings_received':False,'source_repository':'josepha-mayo/Recount','standalone_site':'https://recount-voice-joseph.netlify.app/'},indent=2)+'\n')
+          print('Imported 42 checksum-pinned Recount files. No portfolio files imported.')
+          PY
+      - name: Run all deterministic and HTTP checks without provider access
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/recount-import-evidence
+          node --test tests/*.test.mjs | tee /tmp/recount-import-evidence/node.log
+          python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee /tmp/recount-import-evidence/http.log
+      - name: Verify browser workflow using real Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          python tests/browser.py | tee /tmp/recount-import-evidence/browser.log
+          cp verification/browser.json /tmp/recount-import-evidence/browser.json
+      - name: Record and publish imported source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,re
+          d=Path('/tmp/recount-import-evidence'); n=(d/'node.log').read_text();h=(d/'http.log').read_text();b=json.loads((d/'browser.json').read_text())
+          assert '# fail 0' in n and re.search(r'^OK$',h,re.M) and b['status']=='passed'
+          receipt={'status':'passed','node_tests':int(re.search(r'# tests (\d+)',n)[1]),'http_tests':int(re.search(r'Ran (\d+) tests',h)[1]),'browser_checks':b['check_count'],'provider_calls':0,'human_audio_cases':0,'scope':'Fresh source-only repository import regression. Historical provider evidence remains separately identified.'}
+          Path('migration/REGRESSION_RECEIPT.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          # Browser evidence may vary by runtime; preserve imported bytes exactly in git.
+          import io,zipfile,urllib.request
+          with urllib.request.urlopen('https://github.com/josepha-mayo/Joseph-Portfolio/releases/download/recount-migration-20260917/Recount-Standalone-Source.zip',timeout=30) as r:raw=r.read()
+          import hashlib
+          assert hashlib.sha256(raw).hexdigest()=='50a7c1304b7336f2674e6ac9c1ec6d3d8ceee97c30b41bd83f3ce37d2ca66536'
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              for name in z.namelist():
+                  if name.startswith('Recount/verification/'):
+                      Path(name.removeprefix('Recount/')).write_bytes(z.read(name))
+          print(json.dumps(receipt))
+          PY
+          git config user.name 'recount-import'
+          git config user.email 'actions@users.noreply.github.com'
+          git add .env.example .gitignore LICENSE ORIGIN.json PRODUCT.md README.md SUBMISSION_DRAFT.md evaluation netlify netlify.toml package.json requirements-dev.txt server.py tests verification migration
+          git diff --cached --quiet && exit 0
+          git commit -m 'Import verified standalone Recount with 86 state tests and fresh browser checks'
+          git push origin HEAD:master
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-own-repository-import-evidence
+          path: /tmp/recount-import-evidence/
+          retention-days: 30
+          if-no-files-found: warn
