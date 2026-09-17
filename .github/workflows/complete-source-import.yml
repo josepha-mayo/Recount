@@ -1,0 +1,90 @@
+name: Complete and verify tracked Recount import
+on:
+  push:
+    branches: [master]
+    paths: [.github/workflows/complete-source-import.yml]
+permissions:
+  contents: write
+jobs:
+  complete:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      ALLOW_ASSEMBLYAI: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore only the omitted web directory from the exact verified archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,urllib.request,zipfile,io
+          with urllib.request.urlopen('https://github.com/josepha-mayo/Joseph-Portfolio/releases/download/recount-migration-20260917/Recount-Standalone-Source.zip',timeout=30) as r:data=r.read(2_000_001)
+          assert hashlib.sha256(data).hexdigest()=='50a7c1304b7336f2674e6ac9c1ec6d3d8ceee97c30b41bd83f3ce37d2ca66536'
+          manifest=json.loads(Path('migration/IMPORT_RECEIPT.json').read_text())['source_files']
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+              count=0
+              for name,h in manifest.items():
+                  if not name.startswith('web/'):continue
+                  content=z.read('Recount/'+name);assert hashlib.sha256(content).hexdigest()==h
+                  p=Path(name)
+                  if p.exists():assert p.read_bytes()==content,'existing web file differs'
+                  p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(content);count+=1
+          assert count==7
+          PY
+          git add web
+          mkdir -p /tmp/recount-tracked-checkout
+          git archive "$(git write-tree)" | tar -x -C /tmp/recount-tracked-checkout
+          python - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          root=Path('/tmp/recount-tracked-checkout');m=json.loads((root/'migration/IMPORT_RECEIPT.json').read_text())['source_files']
+          for name,h in m.items():
+              p=root/name;assert p.is_file(),'not tracked: '+name
+              if name not in ['README.md','SUBMISSION_DRAFT.md']:assert hashlib.sha256(p.read_bytes()).hexdigest()==h,name
+          print('All 42 original source paths exist in the tracked Git tree; all non-document source bytes match.')
+          PY
+      - name: Test the archived tracked tree, not the import working directory
+        working-directory: /tmp/recount-tracked-checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/recount-complete-evidence
+          node --test tests/*.test.mjs | tee /tmp/recount-complete-evidence/node.log
+          python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee /tmp/recount-complete-evidence/http.log
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          python tests/browser.py | tee /tmp/recount-complete-evidence/browser.log
+          cp verification/browser.json /tmp/recount-complete-evidence/browser.json
+      - name: Commit verified missing assets with a correction receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,re
+          p=Path('/tmp/recount-complete-evidence');n=(p/'node.log').read_text();h=(p/'http.log').read_text();b=json.loads((p/'browser.json').read_text())
+          assert '# fail 0' in n and re.search(r'^OK$',h,re.M) and b['status']=='passed'
+          r={'status':'passed','tested_source':'git archive of staged tracked tree','original_source_paths_present':42,'node_tests':int(re.search(r'# tests (\d+)',n)[1]),'http_tests':int(re.search(r'Ran (\d+) tests',h)[1]),'browser_checks':b['check_count'],'provider_calls':0,'human_audio_cases':0,'correction':'The first import tested all extracted files but accidentally omitted web from git add. Fresh CI caught the missing modules. All seven exact web assets are now included; this run tests the tracked Git tree and checks every original source path.','prior_failed_ci':35287005185}
+          Path('migration/TRACKED_CHECKOUT_RECEIPT.json').write_text(json.dumps(r,indent=2)+'\n');print(json.dumps(r))
+          PY
+          git config user.name 'recount-import'
+          git config user.email 'actions@users.noreply.github.com'
+          git add web migration/TRACKED_CHECKOUT_RECEIPT.json
+          git commit -m 'Complete all seven web assets and verify the tracked standalone checkout'
+          git push origin HEAD:master
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-tracked-checkout-evidence
+          path: /tmp/recount-complete-evidence/
+          retention-days: 30
