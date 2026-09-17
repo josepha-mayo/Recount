@@ -1,0 +1,62 @@
+name: Recount regression
+on:
+  push:
+    branches: [master]
+    paths: ['web/**', 'tests/**', 'netlify/**', 'server.py', 'requirements-dev.txt', '.github/workflows/ci.yml']
+  pull_request:
+    paths: ['web/**', 'tests/**', 'netlify/**', 'server.py', 'requirements-dev.txt', '.github/workflows/ci.yml']
+permissions:
+  contents: read
+concurrency:
+  group: recount-regression-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      ALLOW_ASSEMBLYAI: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Deterministic counts, corrections and transport tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/recount-ci
+          node --test tests/*.test.mjs | tee /tmp/recount-ci/node.log
+          python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee /tmp/recount-ci/http.log
+      - name: Real Chromium desktop and mobile workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          python tests/browser.py | tee /tmp/recount-ci/browser.log
+          cp verification/browser.json /tmp/recount-ci/browser.json
+      - name: Receipt from actual outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,re,os
+          from pathlib import Path
+          p=Path('/tmp/recount-ci');n=(p/'node.log').read_text();h=(p/'http.log').read_text();b=json.loads((p/'browser.json').read_text())
+          assert '# fail 0' in n and re.search(r'^OK$',h,re.M) and b['status']=='passed'
+          r={'status':'passed','source_commit':os.environ['GITHUB_SHA'],'node_tests':int(re.search(r'# tests (\d+)',n)[1]),'http_tests':int(re.search(r'Ran (\d+) tests',h)[1]),'browser_checks':b['check_count'],'provider_calls':0,'scope':'Software and authored browser workflow checks, not human speech evaluation.'}
+          (p/'RECEIPT.json').write_text(json.dumps(r,indent=2));print(json.dumps(r))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-regression-evidence
+          path: /tmp/recount-ci/
+          retention-days: 30
+          if-no-files-found: warn
