@@ -1,0 +1,12 @@
+{
+  "status": "passed",
+  "tested_source": "git archive of staged tracked tree",
+  "original_source_paths_present": 42,
+  "node_tests": 86,
+  "http_tests": 8,
+  "browser_checks": 18,
+  "provider_calls": 0,
+  "human_audio_cases": 0,
+  "correction": "The first import tested all extracted files but accidentally omitted web from git add. Fresh CI caught the missing modules. All seven exact web assets are now included; this run tests the tracked Git tree and checks every original source path.",
+  "prior_failed_ci": 35287005185
+}
