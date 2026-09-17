@@ -2,9 +2,9 @@ name: Recount regression
 on:
   push:
     branches: [master]
-    paths: ['web/**', 'tests/**', 'netlify/**', 'server.py', 'requirements-dev.txt', '.github/workflows/ci.yml']
+    paths: ['web/**', 'tests/**', 'netlify/**', 'server.py', 'requirements-dev.txt', 'migration/IMPORT_RECEIPT.json', '.github/workflows/ci.yml']
   pull_request:
-    paths: ['web/**', 'tests/**', 'netlify/**', 'server.py', 'requirements-dev.txt', '.github/workflows/ci.yml']
+    paths: ['web/**', 'tests/**', 'netlify/**', 'server.py', 'requirements-dev.txt', 'migration/IMPORT_RECEIPT.json', '.github/workflows/ci.yml']
 permissions:
   contents: read
 concurrency:
@@ -26,11 +26,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Deterministic counts, corrections and transport tests
+      - name: Require every original source path in the tracked checkout
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/recount-ci
+          python - <<'PY'
+          from pathlib import Path
+          import json,subprocess
+          manifest=json.loads(Path('migration/IMPORT_RECEIPT.json').read_text())['source_files']
+          tracked=set(subprocess.check_output(['git','ls-files','-z']).decode().split('\0'))
+          missing=[p for p in manifest if p not in tracked or not Path(p).is_file()]
+          assert not missing, 'Incomplete tracked source: '+', '.join(missing)
+          Path('/tmp/recount-ci/source-paths.json').write_text(json.dumps({'original_source_paths':len(manifest),'missing':missing,'scope':'Checks tracked paths; legitimate subsequent source changes are permitted.'},indent=2))
+          print(f'All {len(manifest)} original source paths exist in the tracked checkout.')
+          PY
+      - name: Deterministic counts, corrections and transport tests
+        shell: bash
+        run: |
+          set -euo pipefail
           node --test tests/*.test.mjs | tee /tmp/recount-ci/node.log
           python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee /tmp/recount-ci/http.log
       - name: Real Chromium desktop and mobile workflow
@@ -48,9 +62,9 @@ jobs:
           python - <<'PY'
           import json,re,os
           from pathlib import Path
-          p=Path('/tmp/recount-ci');n=(p/'node.log').read_text();h=(p/'http.log').read_text();b=json.loads((p/'browser.json').read_text())
-          assert '# fail 0' in n and re.search(r'^OK$',h,re.M) and b['status']=='passed'
-          r={'status':'passed','source_commit':os.environ['GITHUB_SHA'],'node_tests':int(re.search(r'# tests (\d+)',n)[1]),'http_tests':int(re.search(r'Ran (\d+) tests',h)[1]),'browser_checks':b['check_count'],'provider_calls':0,'scope':'Software and authored browser workflow checks, not human speech evaluation.'}
+          p=Path('/tmp/recount-ci');n=(p/'node.log').read_text();h=(p/'http.log').read_text();b=json.loads((p/'browser.json').read_text());paths=json.loads((p/'source-paths.json').read_text())
+          assert '# fail 0' in n and re.search(r'^OK$',h,re.M) and b['status']=='passed' and not paths['missing']
+          r={'status':'passed','source_commit':os.environ['GITHUB_SHA'],'tracked_original_source_paths':paths['original_source_paths'],'node_tests':int(re.search(r'# tests (\d+)',n)[1]),'http_tests':int(re.search(r'Ran (\d+) tests',h)[1]),'browser_checks':b['check_count'],'provider_calls':0,'human_audio_cases':0,'scope':'Fresh Git checkout, software and authored browser workflow checks, not human speech evaluation.'}
           (p/'RECEIPT.json').write_text(json.dumps(r,indent=2));print(json.dumps(r))
           PY
       - uses: actions/upload-artifact@v4
