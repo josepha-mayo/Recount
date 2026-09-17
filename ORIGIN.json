@@ -1,0 +1,15 @@
+{
+  "source_repository": "josepha-mayo/Joseph-Portfolio",
+  "source_path": "recount",
+  "source_commit": "cfa9bbd81630250d5cdb21619dfc444f6b3dafa8",
+  "frozen_human_evaluation_commit": "170124b43d82aa8e771e57295110b41695c8ef9a",
+  "migration_changes": [
+    "independent root deployment",
+    "continuing worklet drain no longer terminates capture",
+    "separate site configuration",
+    "no count-parser or confidence-floor change",
+    "native browser functions bound to global receiver",
+    "outgoing PCM tail satisfies provider minimum packet duration"
+  ],
+  "human_audio_received": false
+}

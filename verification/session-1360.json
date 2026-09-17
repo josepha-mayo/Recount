@@ -1,0 +1,36 @@
+{
+  "schema": "recount-session-1",
+  "history": [
+    {
+      "kind": "turn",
+      "id": "82661d44-da45-472e-8834-a1c1fa787b06",
+      "text": "rice twelve",
+      "source": "typed",
+      "confidence": 1,
+      "final": true,
+      "revision": 0
+    },
+    {
+      "kind": "turn",
+      "id": "bd556e3f-2bfd-413a-9bb1-e9d199a030e2",
+      "text": "bags",
+      "source": "typed",
+      "confidence": 1,
+      "final": true,
+      "revision": 1
+    },
+    {
+      "kind": "turn",
+      "id": "5ff44bd5-25fe-4275-a68f-2817b4ad1677",
+      "text": "no thirteen",
+      "source": "typed",
+      "confidence": 1,
+      "final": true,
+      "revision": 2
+    },
+    {
+      "kind": "confirm",
+      "revision": 3
+    }
+  ]
+}

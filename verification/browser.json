@@ -1,0 +1,29 @@
+{
+  "status": "passed",
+  "checks": [
+    "1360:empty draft cannot confirm",
+    "1360:missing unit question",
+    "1360:correction stays staged",
+    "1360:confirmed corrected count",
+    "1360:CSV actual downloaded bytes",
+    "1360:session actual download",
+    "1360:saved actions replay correctly",
+    "1360:disabled voice not presented as live",
+    "1360:no horizontal overflow or uncaught errors",
+    "390:empty draft cannot confirm",
+    "390:missing unit question",
+    "390:correction stays staged",
+    "390:confirmed corrected count",
+    "390:CSV actual downloaded bytes",
+    "390:session actual download",
+    "390:saved actions replay correctly",
+    "390:disabled voice not presented as live",
+    "390:no horizontal overflow or uncaught errors"
+  ],
+  "check_count": 18,
+  "browser_navigation": "actual loopback HTTP",
+  "browser_executable": "Playwright-managed Chromium",
+  "actual_assemblyai_calls": 0,
+  "actual_audio_evaluations": 0,
+  "scope": "Synthetic text workflow and downloads, not ASR or user-study evidence."
+}

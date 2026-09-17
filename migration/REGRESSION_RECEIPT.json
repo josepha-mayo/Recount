@@ -1,0 +1,9 @@
+{
+  "status": "passed",
+  "node_tests": 86,
+  "http_tests": 8,
+  "browser_checks": 18,
+  "provider_calls": 0,
+  "human_audio_cases": 0,
+  "scope": "Fresh source-only repository import regression. Historical provider evidence remains separately identified."
+}
