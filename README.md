@@ -6,7 +6,7 @@ A correction-aware voice stocktaking prototype by **Joseph Ayanda** for the Asse
 
 - **Application:** https://recount-voice-joseph.netlify.app/
 - **Source:** https://github.com/josepha-mayo/Recount
-- **Fresh import verification:** [migration/REGRESSION_RECEIPT.json](migration/REGRESSION_RECEIPT.json)
+- **Tracked-checkout verification:** [migration/TRACKED_CHECKOUT_RECEIPT.json](migration/TRACKED_CHECKOUT_RECEIPT.json)
 - **Frozen human evaluation:** [evaluation/HUMAN_HOLDOUT_PROTOCOL.json](evaluation/HUMAN_HOLDOUT_PROTOCOL.json)
 
 This is Recount's own repository and its own Netlify project. It contains no portfolio application or unrelated hackathon projects. Historical source attribution remains in [ORIGIN.json](ORIGIN.json).
@@ -18,9 +18,9 @@ A stock count is not just a transcript. “Twelve ... no, thirteen” must updat
 ```text
 Rice twelve bags.      -> Draft: Rice / 12 / bags
 No, thirteen bags.     -> Same draft: Rice / 13 / bags
-Confirm thirteen.      -> One saved count: Rice / 13 / bags
-Rice twelve cartons.   -> Unit mismatch; saved count stays unchanged
-Confirm twelve.        -> Nothing new is saved
+Confirm thirteen.     -> One saved count: Rice / 13 / bags
+Rice twelve cartons.  -> Unit mismatch; saved count stays unchanged
+Confirm twelve.       -> Nothing new is saved
 ```
 
 The prototype asks for missing units, stages absolute counts and requires an explicit quantity echo for spoken confirmation. A generic “yes” cannot commit a count. Duplicate final transcripts cannot create another entry; interrupted or conflicting input can place the session on hold. CSV contains confirmed counts. Reopening a saved session reconstructs state from its action history.
@@ -37,7 +37,9 @@ Open the loopback URL printed by the server. Try `rice twelve`, `bags`, `no thir
 
 ## Verification
 
-The fresh import into this repository passed **86 Node tests, 8 HTTP tests and 18 Chromium checks** in [run 35286291759](https://github.com/josepha-mayo/Recount/actions/runs/35286291759). No provider calls were made by that regression run.
+The complete tracked source tree passed **86 Node tests, 8 HTTP tests and 18 Chromium checks** in [run 35287191553](https://github.com/josepha-mayo/Recount/actions/runs/35287191553). No provider calls were made by this regression run.
+
+The first import tested the extracted archive but accidentally omitted `web/` from its commit list. A subsequent clean-checkout CI run correctly failed on the missing modules. All seven exact web assets were restored; the corrective run then archived and tested the actual tracked Git tree and checked every original source path. Both the failure and the corrective receipt remain available. Ongoing CI includes a tracked-path completeness check.
 
 ```sh
 node --test tests/*.test.mjs
@@ -47,9 +49,9 @@ python -m playwright install chromium
 python tests/browser.py
 ```
 
-All 42 imported source files were checked against the standalone archive with SHA-256 `50a7c1304b7336f2674e6ac9c1ec6d3d8ceee97c30b41bd83f3ce37d2ca66536`. [IMPORT_RECEIPT.json](migration/IMPORT_RECEIPT.json) records the original bytes; later documentation changes are separate commits. Historical files under `verification/` retain their original scope and are not silently relabelled as current results.
+All 42 original source paths are present. The original standalone archive SHA-256 is `50a7c1304b7336f2674e6ac9c1ec6d3d8ceee97c30b41bd83f3ce37d2ca66536`. [IMPORT_RECEIPT.json](migration/IMPORT_RECEIPT.json) records its original bytes; later documentation changes are separate commits. Historical files under `verification/` retain their original scope and are not silently relabelled as current results.
 
-A separate, earlier independent-site browser run used a stock synthetic voice through the actual AssemblyAI service. It received five finalized turns, preserved exactly one Rice / 13 / bags row, exported the expected CSV and reopened the saved session. Its source evidence is [historical run 35279755338](https://github.com/josepha-mayo/Joseph-Portfolio/actions/runs/35279755338). The demonstration is genuine provider integration on synthetic input, **not human/accent validation or a shopkeeper pilot**. No human holdout recording has been scored.
+A separate, earlier independent-site browser run used a stock synthetic voice through the actual AssemblyAI service. It received five finalized turns, preserved exactly one Rice / 13 / bags row, exported the expected CSV and reopened the saved session. Its source evidence is [historical run 35279755338](https://github.com/josepha-mayo/Joseph-Portfolio/actions/runs/35279755338). This is genuine provider integration on synthetic input, **not human/accent validation or a shopkeeper pilot**. No human holdout recording has been scored.
 
 ## Hosting and credentials
 
