@@ -1,112 +1,54 @@
-# Recount — submission draft
+# Recount: current submission draft
 
-> **Count it. Correct it. Confirm it.**
+**Not yet submitted.** The repository and application are independent. Team creation, human holdout scoring and the final event-form requirements are separate remaining steps.
 
-Status: working draft for the AssemblyAI Voice Agent Hackathon. The judge app is deployed; production voice, human holdout, final media and LabLab submission remain gated.
+## Links
 
-## Short description
+- Source: https://github.com/josepha-mayo/Recount
+- App: https://recount-voice-joseph.netlify.app/
+- Event: https://lablab.ai/ai-hackathons/assemblyai-voice-agent-hackathon
+- Current software receipt: [migration/REGRESSION_RECEIPT.json](migration/REGRESSION_RECEIPT.json)
 
-Recount is a correction-safe transactional voice stocktake agent. It turns spoken physical counts into explicit, replayable inventory records without letting a correction, duplicate transcript, vague “yes,” wrong unit or dropped connection silently become a stock write.
+## Title
 
-## Why this exists
+Recount: Correction-Aware Voice Stocktaking
 
-Speech-to-text accuracy is not the whole problem when voice controls a record that matters. A stocktake has transactional semantics: “twelve — no, thirteen” must become one draft, not two movements; “confirm thirteen” should save only the quantity that was just read back; “rice twelve cartons” must not invent a pack conversion; a missing final transcript must not resurrect the previous number.
+## Summary
 
-Recount treats those failure modes as protocol state rather than prompt-engineering edge cases.
+A voice stocktaking assistant that keeps corrections on one draft, asks for explicit units, and saves only after quantity confirmation. Includes review holds, CSV export and replayable session history.
 
-## What the demo proves
+## Description
 
-1. **Correction stays one transaction.** “Rice twelve bags. No, thirteen bags.” stages 13, not 25 and not two rows.
-2. **The read-back is a commit boundary.** A generic “yes” or “confirm count” cannot write. “Confirm thirteen” can only when the current read-back is thirteen.
-3. **Units stay explicit.** “Rice twelve cartons” is refused because the catalogue defines rice in bags. No carton-to-bag conversion is guessed.
-4. **ASR confidence is task-aware.** The first live provider run exposed a bug: a low-confidence correction word could veto a high-confidence number. Recount now stores separate word evidence and gates the task-critical quantity.
-5. **Transport failures fail closed.** Missing finals, changed duplicate finals, out-of-order turns, backpressure, unfinished speech and socket loss create a persistent review hold instead of a silent save.
-6. **Replay is authoritative.** Reopening a session replays recorded actions. A stored total cannot simply assert that it was confirmed.
-7. **The agent does not listen to itself.** In live half-duplex mode microphone capture is disconnected while the local read-back is spoken, then listening resumes.
+A spoken stock count becomes difficult when someone changes their mind. “Twelve, no, thirteen” should produce one checked record, not two inventory movements.
 
-## AssemblyAI use
+Recount uses AssemblyAI streaming transcription to stage an absolute count for one catalogue item. It asks for missing units, applies corrections to the pending draft, and requires an explicit quantity echo such as “confirm thirteen” before saving. Vague confirmations and unsupported unit conversions do not create stock records. Duplicate, missing or conflicting transcript events have explicit handling, including a review hold when the input cannot be trusted.
 
-The voice path uses AssemblyAI Streaming v3 with `universal-3-5-pro`. The browser gets a short-lived provider token from a same-origin serverless endpoint; the permanent AssemblyAI key stays server-side. Only finalized `Turn` events enter the deterministic ledger.
+The independent web app exports confirmed stock as CSV and can reopen a saved action history. In its recorded provider test, five finalized turns produced one Rice / 13 / bags record; a later cartons request did not change it. CSV content and session reopening were checked. This test used a disclosed synthetic voice through the actual provider, not a prewritten transcription response.
 
-The judge deployment also requires a separate access code and explicit audio consent. Its config and token functions passed mocked same-origin, CSRF and wrong-code rejection tests before production merge.
+The standalone repository's fresh import passed 86 Node tests, eight HTTP tests and 18 Chromium checks. Human speech and shopkeeper usability evaluation remain pending. The catalogue is small, and the app does not write into a production stock system, place orders or make payments.
 
-## Evidence already executed
+## Media prepared
 
-### Real AssemblyAI integration
+A 140.32-second, 1920-by-1080 narrated MP4 was delivered in the conversation as `Recount-Standalone-Narrated-Demo.mp4`. SHA-256: `890965557c3d0b1b1a29713cfe17988b9663b8b873a4bfd42462d953d710e972`.
 
-A bounded provider validation used authored synthetic speech and actual AssemblyAI Streaming v3 calls. The initial run failed three semantic cases because Recount used the minimum confidence of every word. The evidence was preserved. After the task-aware confidence fix, four predeclared provider cases reached their intended state:
+It contains the actual recorded independent-site provider sequence at its original speed, plus stock neural narration around it. The original synthetic microphone fixture is restored using the recorded capture offset. Browser speech synthesis output was not recorded. There is no human microphone holdout in this video. The MP4 and cover are available in the conversation's media packet; no public watch URL is asserted here.
 
-- Rice 12 bags → correction to 13 bags.
-- Soap 15 bars → correction to 50 bars.
-- Cooking oil 8 bottles.
-- Rice 12 cartons → rejected as wrong unit.
+## Team setup
 
-A later provider run exercised spoken quantity confirmation in the same flow: correction → read-back → “confirm [quantity]” → commit. Wrong-unit input still could not be rescued by a matching confirmation number.
+Team name: **Recount**. Member and leader: **Joseph Ayanda**, solo, Nigeria. Do not recruit or invite teammates.
 
-These runs use synthetic authored audio. They establish provider integration and ledger behavior, **not human speech accuracy, Nigerian-accent performance or population-level reliability**.
+Team idea: “We are building Recount, a voice stocktaking assistant that keeps corrections on one draft and saves only after the quantity is confirmed. It uses AssemblyAI streaming transcription, explicit units and a replayable count history. Built solo by Joseph Ayanda.”
 
-### Deterministic + browser verification
+LabLab's public guide documents profile completion, Discord connection and the Create or Join a team route. The exact logged-in form must still be read. Do not fabricate team creation or a final submission receipt.
 
-The source branch has **82 deterministic Node tests**, **8 real loopback HTTP checks**, and **18 real Chromium workflow checks** in the latest full regression lane. Provider calls are disabled there.
+## Remaining gates
 
-The `/recount/` production staging separately passed file-hash verification, the prefixed browser workflow, the mocked judge-token security boundary and the existing portfolio build before a clean 10-file production diff was merged.
+1. Create and verify the one-person Recount team.
+2. Score the existing frozen human holdout once when its recording is provided. Keep failures; a changed system needs a fresh holdout before a new human-performance claim.
+3. Finalize the required PDF presentation and any event-specific fields; upload the MP4 or supply its actual watch URL as required by the live form.
+4. Provide the private judge code only through a field explicitly private to judges. Do not publish it in source, media or team descriptions.
+5. Submit through the actual event form and read back a submission receipt.
 
-Production URL: **https://josephmayo.site/recount/**
+The separate Netlify site's current variables remain in place. Its deployment was uploaded directly; automatic Git-to-Netlify linkage is not yet claimed. Future provider CI needs a separately configured secret in this new repository; the no-cost regression pipeline does not.
 
-A live unauthenticated judge-view check on 17 September confirmed the page renders without visible errors or horizontal overflow and that the text path `rice twelve → bags → no thirteen → confirm thirteen` produces exactly one `Rice 13 bags` row.
-
-Production voice is intentionally disabled until the same private AssemblyAI key already used for provider validation is copied into Netlify's runtime environment.
-
-### Frozen human holdout
-
-The human holdout script was committed before hearing Joseph's recording. It will be scored once. If it exposes a failure and causes code changes, the first result stays in the record and a second unseen recording is required.
-
-## What Recount does not claim
-
-- It is not a general conversational assistant.
-- It does not infer missing units or pack conversions.
-- It does not place orders, move money, message suppliers or write into an external production inventory system.
-- It has no measured shopkeeper productivity or business-impact result yet.
-- The frozen human holdout is still pending.
-- Development confidence floors are not calibrated probabilities.
-
-## Product direction
-
-The useful primitive is **verified voice write**, not “AI chat for inventory.” The same interaction pattern can later sit in warehouse checks, maintenance logs, inspections, receiving desks and other hands-busy workflows where speech is easy but silent record corruption is expensive.
-
-## Suggested tags
-
-AssemblyAI · Voice AI · Streaming speech-to-text · Inventory · Reliability · Human-in-the-loop · JavaScript · Serverless
-
-## Demo arc, target 90–120 seconds
-
-**0–12s — problem.** “Voice forms are easy until somebody says twelve — no, thirteen. In a stock record, that is not a cosmetic transcription mistake.”
-
-**12–45s — correction path.** Start voice mode. Count rice as twelve bags, correct to thirteen, hear Recount read it back, say “confirm thirteen,” and show exactly one confirmed row.
-
-**45–65s — refusal.** Say “rice twelve cartons.” Show that Recount refuses to guess a conversion and does not alter the confirmed rice count.
-
-**65–85s — integrity.** Show the action/revision record. Explain that finalized provider speech, correction state and confirmation are separate. Mention the real confidence-gate bug from the first provider run and the fix.
-
-**85–105s — evidence.** Show the provider-validation result and frozen human holdout. Keep synthetic-provider evidence distinct from human speech evidence.
-
-**105–120s — close.** “Recount is small by design: speech can propose a record, but only an echoed read-back can commit it.”
-
-## Assets / gates
-
-- [x] Judge-accessible static `/recount/` deployment and serverless short-lived-token boundary.
-- [ ] Copy private `ASSEMBLYAI_API_KEY` into Netlify production runtime; verify one bounded live judge session.
-- [ ] Frozen human holdout recording and score.
-- [ ] Second unseen recording only if the first holdout causes changes.
-- [ ] One-person LabLab Recount team/project entry.
-- [ ] 16:9 cover image.
-- [ ] Final MP4 demo with clear paced narration and real voice workflow.
-- [ ] PDF presentation matching actual evidence.
-- [ ] Final LabLab submission receipt.
-
-## Submission links
-
-- Judge app: https://josephmayo.site/recount/
-- Source: https://github.com/josepha-mayo/Joseph-Portfolio/tree/hackathon/recount-voice-20260917/recount
-- Video: pending
-- Presentation: pending
+Public form guide: https://lablab.ai/ai-articles/hackathon-guidelines
