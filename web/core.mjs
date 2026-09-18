@@ -47,7 +47,7 @@ function confirmationNumber(t){
 export function parse(text,previous=null){
   const t=normalizeTranscript(text);
   if(['cancel','discard','discard count','cancel count'].includes(t))return {cancel:true};
-  if(['confirm','save','save count','confirm count'].includes(t))return {confirmRequested:true};
+  if(['confirm','confirmed','save','saved','save count','confirm count','confirmed count'].includes(t))return {confirmRequested:true};
   const confirmation=confirmationNumber(t);if(confirmation)return confirmation;
   if(['read back','read it back','repeat'].includes(t))return {repeat:true};
   const clauses=t.split(/\b(?:no|actually|sorry|make that|correction)\b/).map(s=>s.trim());
