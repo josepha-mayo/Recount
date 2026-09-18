@@ -1,0 +1,58 @@
+name: Recount recovery source snapshot
+on:
+  push:
+    branches: [master]
+    paths: ['.github/workflows/recovery-snapshot.yml']
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Preserve exact source and inspect public assets only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/recount-snapshot
+          git archive --format=zip --prefix=Recount/ HEAD > /tmp/recount-snapshot/source.zip
+          python - <<'PY'
+          import hashlib,json,os,urllib.request
+          from pathlib import Path
+          origin='https://recount-voice-joseph.netlify.app'
+          rows=[]
+          for name in ['index.html','app.mjs','core.mjs','voice-runtime.mjs','capture-gate.mjs','audio-worklet.js','style.css']:
+              local=Path('web',name).read_bytes()
+              path='/' if name=='index.html' else '/'+name
+              try:
+                  req=urllib.request.Request(origin+path,headers={'Cache-Control':'no-cache'})
+                  with urllib.request.urlopen(req,timeout=12) as r: data=r.read(400000);status=r.status
+                  rows.append({'asset':name,'http_status':status,'local_sha256':hashlib.sha256(local).hexdigest(),'live_sha256':hashlib.sha256(data).hexdigest(),'matches':data==local})
+              except Exception as e:
+                  rows.append({'asset':name,'read_error':type(e).__name__})
+          report={'source_commit':os.environ['GITHUB_SHA'],'site':origin,'assets':rows,'provider_requests':0,'private_audio_uploaded':False,'scope':'Public source assets only; no token or microphone call.'}
+          Path('/tmp/recount-snapshot/SITE_IDENTITY.json').write_text(json.dumps(report,indent=2))
+          print(json.dumps(report))
+          PY
+      - name: Check whether deployment can use an existing repository secret
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          r={k:bool(os.environ.get(k)) for k in ['NETLIFY_AUTH_TOKEN','ASSEMBLYAI_API_KEY']}
+          Path('/tmp/recount-snapshot/CAPABILITIES.json').write_text(json.dumps(r))
+          print(json.dumps(r))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recount-recovery-source-snapshot
+          path: /tmp/recount-snapshot/
+          retention-days: 14
+          if-no-files-found: error
