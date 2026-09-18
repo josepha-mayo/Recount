@@ -60,7 +60,7 @@ export class VoiceRuntime {
       const data=await res.json();
       if(!this.live(v))return false;
       if(!res.ok||typeof data.token!=='string'||!Number.isFinite(data.max_session_duration_seconds))throw Error(data?.error||'Provider token unavailable');
-      const query=new URLSearchParams({sample_rate:String(v.ctx.sampleRate),encoding:'pcm_s16le',speech_model:data.speech_model,token:data.token});
+      const query=new URLSearchParams({sample_rate:String(v.ctx.sampleRate),encoding:'pcm_s16le',speech_model:data.speech_model,min_turn_silence:'450',max_turn_silence:'1200',token:data.token});
       v.ws=new this.d.WebSocket('wss://streaming.assemblyai.com/v3/ws?'+query);
       v.ws.onmessage=async e=>{
         if(!this.live(v))return;
