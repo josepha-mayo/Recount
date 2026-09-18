@@ -1,0 +1,58 @@
+{
+  "schema": "recount-recovery-development-verification-1",
+  "status": "SOFTWARE_CHECKS_PASSED_HUMAN_TASK_STILL_NOT_PASSED",
+  "merged_commit": "29b070a0c6bebddf9b9ec95c663bc05264e5a096",
+  "pull_request": 3,
+  "diagnostic_input": {
+    "provider_sessions": 1,
+    "audio_seconds_sent": 46.5535,
+    "final_turns": 27,
+    "recorded_provider_errors": 0,
+    "original_expected_final_counts_exact": 0,
+    "original_expected_final_counts_total": 4,
+    "original_save_events": 0
+  },
+  "baseline_reproduction": {
+    "unchanged_core_blob": "28b7216204254381b6411c4d777ed6e8e9ed4b31",
+    "all_27_replies_match": true,
+    "all_27_pending_and_count_states_match": true
+  },
+  "candidate_development_replay": {
+    "original_final_events_reused": 27,
+    "transcripts_or_confidences_modified": false,
+    "injected_resets_or_confirmation_actions": 0,
+    "complete_unconfirmed_review_drafts": 4,
+    "incomplete_review_drafts": 1,
+    "includes_intermediate_not_final_count": true,
+    "automatic_saves": 0,
+    "expected_final_counts_exact": 0,
+    "expected_final_counts_total": 4,
+    "zero_count_still_unresolved": true
+  },
+  "ci": {
+    "status": "passed",
+    "source_commit": "c504662cb229b10d395e722011c95d1fa963e13f",
+    "tracked_original_source_paths": 42,
+    "node_tests": 132,
+    "http_tests": 8,
+    "browser_checks": 32,
+    "provider_calls": 0,
+    "human_audio_cases": 0,
+    "scope": "Fresh Git checkout, software and authored browser workflow checks, not human speech evaluation.",
+    "run_id": 35374428965,
+    "artifact_id": 10558898957,
+    "artifact_sha256": "158e552a13e250fe5a74527c37539cb0df1695d249c4b6ff77d1f94983826ed0",
+    "new_node_recovery_tests": 29,
+    "new_browser_checks": 14,
+    "desktop_mobile_screenshots_inspected": true
+  },
+  "boundary": {
+    "new_provider_requests": 0,
+    "new_audio_uploads": 0,
+    "thresholds_lowered": false,
+    "netlify_deploy_performed": false,
+    "human_holdout_status_changed": false,
+    "private_audio_or_transcripts_committed": false
+  },
+  "next_gate": "Interactive recovery and confidence behavior need validation. Do not request another unseen recording just to tune the known file into a pass."
+}
