@@ -1,0 +1,41 @@
+{
+  "schema": "recount-endpoint-request-audit-1",
+  "date": "2026-09-18",
+  "received_sweep": {
+    "attempted_configurations": 3,
+    "reported_result_each": "provider error",
+    "usable_comparisons": 0,
+    "best_observed": null,
+    "actual_begin_receipts": null,
+    "actual_audio_bytes_sent": null,
+    "actual_provider_error_code": null,
+    "note": "The old sessions field counted attempted configurations, not independently recorded Begin receipts. Actual connection starts, transmitted bytes and billing cannot be established from that result."
+  },
+  "confirmed_script_defects": [
+    "The sweep appended keyterms_prompt once per plain-text term. The documented WebSocket query representation is ONE JSON-encoded array.",
+    "The safe-event projection discarded the provider Error text, then the report replaced its details with provider error. WebSocket close codes and reasons were not retained.",
+    "The sweep continued across three configurations despite the common provider failure."
+  ],
+  "causality": "The request-format mismatch is verified in the original script. The exact server rejection remains unknown because the original diagnostic details were discarded.",
+  "delivered_repair": {
+    "package": "Recount-Endpoint-Repair.zip",
+    "package_sha256": "d94012e56e062a7f38944e94f960d66edd5deae258f2c785b34d3b9fababc0ed",
+    "client_sha256": "fd0f03d00b168191214f3b80e07d29a13e76925489026776d388648de92e4e94",
+    "changes": [
+      "Serialize keyterms_prompt exactly once using JSON.stringify.",
+      "Retain redacted Error message/code, close code/reason, failure phase, actual Begin count and transmitted bytes.",
+      "Attempt only the first original 160/400 ms candidate, not a claimed winning configuration; send no voice until Begin; stop on error without retry.",
+      "Verify carried input hashes, preserve real-time packet pacing, close/terminate connections, retain checkpointed diagnostic output and enforce a one-attempt lock."
+    ],
+    "unchanged_byte_for_byte": ["original OGG", "decoded PCM", "protocol", "scorer", "frozen ledger", "frozen capture gate", "private access configuration"],
+    "offline_fixture_tests": {"passed": 21, "failed": 0, "provider_calls": 0},
+    "local_live_attempt": {"stage": "config_http", "cause_code": "EAI_AGAIN", "provider_sessions_begun": 0, "audio_bytes_sent": 0},
+    "live_repaired_request_validated": false
+  },
+  "privacy": "Private audio and access configuration remain only in the private conversation packet, not this repository. No permanent AssemblyAI API key is in that packet.",
+  "claim_boundary": "Development diagnostics only. Neither failed holdout is relabelled. No new recognition result, winning endpoint setting, deployment or final submission is claimed.",
+  "references": [
+    "https://www.assemblyai.com/docs/streaming/prompting-and-keyterms",
+    "https://www.assemblyai.com/docs/streaming/common-session-errors-and-closures"
+  ]
+}
