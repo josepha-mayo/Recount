@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Apply bounded integration edits
+      - name: Apply four runtime integration edits only
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -38,10 +38,8 @@ jobs:
           s=s[:a]+"const readback=new ReadbackPlayer();\nfunction cancelSpeech(){readback.cancel();}\nfunction say(text){return $('speak').checked?readback.speak(text):Promise.resolve({status:'disabled'});}\nfunction speak(){if(!voice.active())void say(state.reply).catch(e=>error(e));}\n"+s[b:];p.write_text(s)
           p=Path('server.py');s=p.read_text();needle="'/style.css':('style.css','text/css')";assert needle in s;s=s.replace(needle,needle+",'/readback.mjs':('readback.mjs','text/javascript'),'/streaming-request.mjs':('streaming-request.mjs','text/javascript')");p.write_text(s)
           p=Path('tests/voice_loop.test.mjs');s=p.read_text().replace("get('min_turn_silence'),'450'","get('min_turn_silence'),'160'").replace("get('max_turn_silence'),'1200'","get('max_turn_silence'),'400'");p.write_text(s)
-          p=Path('.github/workflows/ci.yml');s=p.read_text();s=s.replace('          cp verification/browser.json /tmp/recount-ci/browser.json','          cp verification/browser.json /tmp/recount-ci/browser.json\n          RECOUNT_VOICE_TEST_OUT=/tmp/recount-ci/voice-recovery python tests/browser_voice_recovery.py | tee /tmp/recount-ci/voice-recovery.log')
-          s=s.replace("'browser_checks':b['check_count'],'provider_calls':0", "'browser_checks':b['check_count'],'voice_recovery_browser_checks':json.loads((p/'voice-recovery/RECEIPT.json').read_text())['check_count'],'provider_calls':0");p.write_text(s)
           PY
-      - name: Run all inherited tests and browser recovery interaction
+      - name: Run inherited tests and actual browser recovery controls
         shell: bash
         run: |
           set -euo pipefail
@@ -53,16 +51,17 @@ jobs:
           python tests/browser.py | tee /tmp/recount-interactive/browser.log
           cp verification/browser.json /tmp/recount-interactive/browser.json
           RECOUNT_VOICE_TEST_OUT=/tmp/recount-interactive/voice-recovery python tests/browser_voice_recovery.py | tee /tmp/recount-interactive/voice-recovery.log
-      - name: Commit only the reviewed integration paths after successful execution
+      - name: Commit tested runtime source without changing workflow files
         run: |
           set -euo pipefail
-          git add web/app.mjs web/voice-runtime.mjs server.py tests/voice_loop.test.mjs .github/workflows/ci.yml
+          git add web/app.mjs web/voice-runtime.mjs server.py tests/voice_loop.test.mjs
+          git diff --cached --name-only | grep -qv '^.github/'
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Integrate bounded readback and validated streaming profile after browser recovery checks'
-          git push origin HEAD:release/interactive-recovery-20260918
+          git commit -m 'Integrate tested readback and streaming profile without workflow permission changes'
           git archive --format=zip --prefix=Recount/ HEAD > /tmp/recount-interactive/source.zip
           git rev-parse HEAD > /tmp/recount-interactive/SOURCE_COMMIT.txt
+          git push origin HEAD:release/interactive-recovery-20260918
       - uses: actions/upload-artifact@v4
         if: always()
         with:
