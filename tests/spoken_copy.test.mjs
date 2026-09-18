@@ -1,0 +1,6 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {conciseReadback} from '../web/readback.mjs';
+const full='Beans: 16 bags. To save hands-free, say “confirm 16”, or press Confirm count. This replaces its count, not adds to it.';
+test('spoken readback retains item quantity unit and echo instruction',()=>{assert.equal(conciseReadback(full),'Beans: 16 bags. Say confirm 16, or correct the count.');});
+test('weak item-unit evidence remains an audible warning',()=>{assert.match(conciseReadback(full+' One non-number word was low-confidence, so verify this read-back carefully.'),/Check the item and unit carefully/);});
+test('mismatched numbers and unknown messages are not summarized into a false confirmation',()=>{assert.equal(conciseReadback(full.replace('confirm 16','confirm 60')),full.replace('confirm 16','confirm 60'));const msg='The confirmation said 12, but the read-back is 13. Nothing was saved.';assert.equal(conciseReadback(msg),msg);});
+test('unclear confirmation stays explicitly unsaved in shorter speech',()=>{const s=conciseReadback('The confirmation number or command was not clear enough to commit. The draft is preserved. Repeat the confirmation number, or stop audio and review it on screen.');assert.match(s,/Nothing saved/);assert.match(s,/Repeat/);assert.ok(s.split(' ').length<20);});

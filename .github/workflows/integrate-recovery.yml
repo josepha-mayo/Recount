@@ -1,0 +1,71 @@
+name: Integrate Recount interactive recovery
+on:
+  push:
+    branches: [release/interactive-recovery-20260918]
+    paths: ['.github/workflows/integrate-recovery.yml']
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      ALLOW_ASSEMBLYAI: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/interactive-recovery-20260918
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply four runtime integration edits only
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('web/voice-runtime.mjs');s=p.read_text()
+          s=s.replace("import {CaptureGate} from './capture-gate.mjs';", "import {CaptureGate} from './capture-gate.mjs';\nimport {streamingURL} from './streaming-request.mjs';")
+          old="try{await this.promptReply();}catch{this.onError('Read-back audio failed. The visual read-back remains available.');}"
+          assert old in s
+          s=s.replace(old,"try{await this.promptReply();}catch{this.onError('Read-back failed or timed out. Audio stopped; review the held draft.');this.fail(v,'audio_gap');return;}")
+          old="const query=new URLSearchParams({sample_rate:String(v.ctx.sampleRate),encoding:'pcm_s16le',speech_model:data.speech_model,min_turn_silence:'450',max_turn_silence:'1200',token:data.token});\n      v.ws=new this.d.WebSocket('wss://streaming.assemblyai.com/v3/ws?'+query);"
+          assert old in s
+          s=s.replace(old,"const url=streamingURL({sampleRate:v.ctx.sampleRate,speechModel:data.speech_model,token:data.token});\n      v.ws=new this.d.WebSocket(url);");p.write_text(s)
+          p=Path('web/app.mjs');s=p.read_text();s=s.replace("import {VoiceRuntime} from './voice-runtime.mjs';","import {VoiceRuntime} from './voice-runtime.mjs';\nimport {ReadbackPlayer} from './readback.mjs';")
+          a=s.index('function cancelSpeech()');b=s.index('function render()')
+          s=s[:a]+"const readback=new ReadbackPlayer();\nfunction cancelSpeech(){readback.cancel();}\nfunction say(text){return $('speak').checked?readback.speak(text):Promise.resolve({status:'disabled'});}\nfunction speak(){if(!voice.active())void say(state.reply).catch(e=>error(e));}\n"+s[b:];p.write_text(s)
+          p=Path('server.py');s=p.read_text();needle="'/style.css':('style.css','text/css')";assert needle in s;s=s.replace(needle,needle+",'/readback.mjs':('readback.mjs','text/javascript'),'/streaming-request.mjs':('streaming-request.mjs','text/javascript')");p.write_text(s)
+          p=Path('tests/voice_loop.test.mjs');s=p.read_text().replace("get('min_turn_silence'),'450'","get('min_turn_silence'),'160'").replace("get('max_turn_silence'),'1200'","get('max_turn_silence'),'400'");p.write_text(s)
+          PY
+      - name: Run inherited tests and actual browser recovery controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/recount-interactive
+          node --test tests/*.test.mjs | tee /tmp/recount-interactive/node.log
+          python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee /tmp/recount-interactive/http.log
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          python tests/browser.py | tee /tmp/recount-interactive/browser.log
+          cp verification/browser.json /tmp/recount-interactive/browser.json
+          RECOUNT_VOICE_TEST_OUT=/tmp/recount-interactive/voice-recovery python tests/browser_voice_recovery.py | tee /tmp/recount-interactive/voice-recovery.log
+      - name: Commit tested runtime source without changing workflow files
+        run: |
+          set -euo pipefail
+          git add web/app.mjs web/voice-runtime.mjs server.py tests/voice_loop.test.mjs
+          git diff --cached --name-only | grep -qv '^.github/'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Integrate tested readback and streaming profile without workflow permission changes'
+          git archive --format=zip --prefix=Recount/ HEAD > /tmp/recount-interactive/source.zip
+          git rev-parse HEAD > /tmp/recount-interactive/SOURCE_COMMIT.txt
+          git push origin HEAD:release/interactive-recovery-20260918
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-interactive-recovery-evidence
+          path: /tmp/recount-interactive/
+          retention-days: 14
+          if-no-files-found: error

@@ -1,18 +1,12 @@
 import {CATALOG,initial,reduce,replay,ready,exportCSV} from './core.mjs';
 import {VoiceRuntime} from './voice-runtime.mjs';
+import {ReadbackPlayer} from './readback.mjs';
 const $=id=>document.getElementById(id);let state=initial(),config=null,viewRevision=0;
 function error(e){$('error').textContent=e?.message??String(e);}
-function cancelSpeech(){if('speechSynthesis'in window)speechSynthesis.cancel();}
-function say(text){
-  if(!$('speak').checked||!('speechSynthesis'in window))return Promise.resolve();
-  return new Promise(resolve=>{
-    cancelSpeech();let settled=false,timer;
-    const finish=()=>{if(settled)return;settled=true;clearTimeout(timer);resolve();};
-    const u=new SpeechSynthesisUtterance(text);u.rate=.88;u.onend=finish;u.onerror=finish;
-    speechSynthesis.speak(u);timer=setTimeout(finish,12000);
-  });
-}
-function speak(){if(!voice.active())void say(state.reply);}
+const readback=new ReadbackPlayer();
+function cancelSpeech(){readback.cancel();}
+function say(text){return $('speak').checked?readback.speak(text):Promise.resolve({status:'disabled'});}
+function speak(){if(!voice.active())void say(state.reply).catch(e=>error(e));}
 function render(){
   viewRevision=state.revision;$('reply').textContent=state.reply;const p=state.pending,locked=voice.active();
   $('draft').textContent=p?`${CATALOG[p.sku].label} / ${p.quantity??'?'} ${p.unit??'unit?'}`:'No count waiting';

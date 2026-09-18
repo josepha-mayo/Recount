@@ -55,6 +55,7 @@ jobs:
           python -m playwright install --with-deps chromium
           python tests/browser.py | tee /tmp/recount-ci/browser.log
           cp verification/browser.json /tmp/recount-ci/browser.json
+          RECOUNT_VOICE_TEST_OUT=/tmp/recount-ci/voice-recovery python tests/browser_voice_recovery.py | tee /tmp/recount-ci/voice-recovery.log
           cp verification/desktop-*.png /tmp/recount-ci/
       - name: Receipt from actual outputs
         shell: bash
@@ -63,9 +64,9 @@ jobs:
           python - <<'PY'
           import json,re,os
           from pathlib import Path
-          p=Path('/tmp/recount-ci');n=(p/'node.log').read_text();h=(p/'http.log').read_text();b=json.loads((p/'browser.json').read_text());paths=json.loads((p/'source-paths.json').read_text())
-          assert '# fail 0' in n and re.search(r'^OK$',h,re.M) and b['status']=='passed' and not paths['missing']
-          r={'status':'passed','source_commit':os.environ['GITHUB_SHA'],'tracked_original_source_paths':paths['original_source_paths'],'node_tests':int(re.search(r'# tests (\d+)',n)[1]),'http_tests':int(re.search(r'Ran (\d+) tests',h)[1]),'browser_checks':b['check_count'],'provider_calls':0,'human_audio_cases':0,'scope':'Fresh Git checkout, software and authored browser workflow checks, not human speech evaluation.'}
+          p=Path('/tmp/recount-ci');n=(p/'node.log').read_text();h=(p/'http.log').read_text();b=json.loads((p/'browser.json').read_text());paths=json.loads((p/'source-paths.json').read_text());v=json.loads((p/'voice-recovery/RECEIPT.json').read_text())
+          assert '# fail 0' in n and re.search(r'^OK$',h,re.M) and b['status']=='passed' and v['status']=='passed' and not paths['missing']
+          r={'status':'passed','source_commit':os.environ['GITHUB_SHA'],'tracked_original_source_paths':paths['original_source_paths'],'node_tests':int(re.search(r'# tests (\d+)',n)[1]),'http_tests':int(re.search(r'Ran (\d+) tests',h)[1]),'browser_checks':b['check_count'],'voice_recovery_browser_checks':v['check_count'],'provider_calls':0,'human_audio_cases':0,'scope':'Fresh Git checkout, software and authored browser workflow checks. Recovery provider and speech callbacks are mocked; not human speech evaluation.'}
           (p/'RECEIPT.json').write_text(json.dumps(r,indent=2));print(json.dumps(r))
           PY
       - uses: actions/upload-artifact@v4
