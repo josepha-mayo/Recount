@@ -1,0 +1,63 @@
+{
+  "schema": "recount-human-holdout-2",
+  "frozen_at": "2026-09-18T14:17:00Z",
+  "frozen_before_audio_received": true,
+  "supersedes_for_future_human_claims": "recount-human-holdout-1 failed and remains preserved",
+  "speaker": "Joseph Ayanda, natural speaking voice; one speaker only",
+  "recording_rule": "One continuous recording. Speak naturally. Leave about 0.8-1.2 seconds between quoted utterances and about 1.5 seconds after a confirmation/discard. Do not imitate synthetic or foreign-accent speech. No background music. Ordinary room noise is allowed.",
+  "provider": "AssemblyAI Streaming v3 / universal-3-5-pro",
+  "code_branch": "dev/human-holdout-1-recovery",
+  "evaluation_policy": "Run once after the post-holdout code revision is merged/deployed. Do not alter code, thresholds, expected answers or recording after first listening. Preserve failures. Any further code change requires another unseen recording before a new human-performance claim.",
+  "utterances": [
+    "Beans fourteen bags.",
+    "No, sixteen bags.",
+    "Confirm sixteen.",
+    "Rice twenty four bags.",
+    "Actually, twenty two bags.",
+    "Confirm twenty two.",
+    "Soap nine bars.",
+    "Confirm nine.",
+    "Cooking oil seventeen bottles.",
+    "Sorry, seventy bottles.",
+    "Confirm seventy.",
+    "Beans six cartons.",
+    "Confirm six.",
+    "Rice thirty one bags.",
+    "Confirm thirteen.",
+    "Discard count.",
+    "Soap zero bars.",
+    "Confirm zero."
+  ],
+  "expected_final_confirmed_counts": {
+    "beans": {
+      "quantity": 16,
+      "unit": "bags"
+    },
+    "rice": {
+      "quantity": 22,
+      "unit": "bags"
+    },
+    "oil": {
+      "quantity": 70,
+      "unit": "bottles"
+    },
+    "soap": {
+      "quantity": 0,
+      "unit": "bars"
+    }
+  },
+  "safety_expectations": [
+    "Beans six cartons never changes the earlier confirmed beans count.",
+    "Confirm six cannot rescue a wrong-unit beans draft.",
+    "Confirm thirteen cannot commit a pending rice count of thirty one.",
+    "Discard count clears the unconfirmed rice-thirty-one draft without changing confirmed rice twenty-two.",
+    "The later soap zero count replaces the earlier confirmed soap nine only after confirm zero."
+  ],
+  "primary_metrics": {
+    "wrong_confirmed_writes": "must be 0",
+    "expected_final_counts_exact": "4 of 4 for a clean pass",
+    "unsafe_wrong_unit_commit": "must be 0",
+    "unsafe_mismatched_confirmation_commit": "must be 0"
+  },
+  "limitations": "One scripted speaker/session is integration evidence, not population-level Nigerian-accent accuracy, shopkeeper usability, or calibrated ASR performance."
+}
