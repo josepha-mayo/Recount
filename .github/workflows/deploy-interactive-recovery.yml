@@ -1,0 +1,94 @@
+name: Deploy verified Recount recovery
+on:
+  push:
+    branches: [master]
+    paths: ['.github/workflows/deploy-interactive-recovery.yml']
+permissions:
+  contents: read
+concurrency:
+  group: recount-production-release
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: b82c262cd962415721c5654541ec5c82bc49223b
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Prepare exact tracked source without checkout credentials
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = b82c262cd962415721c5654541ec5c82bc49223b
+          mkdir -p /tmp/recount-release-source /tmp/recount-release-receipt
+          git archive HEAD | tar -x -C /tmp/recount-release-source
+      - name: Authorized deployment to the existing Recount site only
+        env:
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'JS'
+          import {hkdfSync,createDecipheriv} from 'node:crypto';
+          import {execFileSync} from 'node:child_process';
+          import fs from 'node:fs';
+          const envelope={"meta":{"repository":"josepha-mayo/Recount","site_id":"df8d4f20-8294-4f70-820a-731fa440156b","source_commit":"b82c262cd962415721c5654541ec5c82bc49223b","expires_at":"2026-09-18T19:04:53.095357+00:00"},"salt":"fad8a635cf21e3321e747b425a18ec3f0f1eb721b3fb1b04975fce3f6c9c8aae","iv":"be96aa6532c8becd7d22ec02","ciphertext":"Hfkt9AVuJ1Qb5J624Knoh7W5mCw6Xv4BZ6tZEL0nN5/3rwDbI/8LmMlYVd9Fyu+cgQGdNkwBQsY75Oo2SZySL3d1urgZByJA+cf0ityK6j27r5qaUEOsz2s/KxCOx/ITYtjLRLm2qloIovn/NnrOSYaPQ+C9Ud5JMltDwIm9DH7G08TUoiFFDz+70d6ZIAE0IBiBwqZgbvFLZT017OhvU7IwhugdJqYbR3f3jFinor+eua8KfrVNGGinq6RV1d6Qr83tto03wmpRQOSMYS6sfTyKmn1HeX4Mpd0WRgjje9F/owZMxhwfBFgn7Cz5xo3cSfYFbMCWfUxOemplCsNiv/ySbVltTcXsZkGldsMBQLUw+DeXg1m/gYtjdGu5y2h2ANn3KKmje3YcWXJg1UkRWnBOvBE3t2W5jRLoBtWhc720ys0HRRB70zKAcJ2p/9Rqco63hke25K4DvTBveR1h1sphsqSaX3SFDJLvENxj9OB8k9OdfF9U/wCp2KBqvAgTiciLbP+EsJPz1aKbu/DkIRP3pSADYKBD/t5QPq3AubTz2mks9Q7WUVyOXpCirNRi9b1z0s3GLggztKigakK3WIJromp+BqvxjQStq+sHOIZGMFCh/J45ooYcoHMN/27TyiHukcmZOi+NKlgu2XKoAnEO97J9XbpdP6Z/9v7aBQ==","tag":"e52246d61ddb9b8c6e8fc2cee844edb9"};
+          const m=envelope.meta,secret=process.env.ASSEMBLYAI_API_KEY?.trim();
+          if(process.env.GITHUB_REPOSITORY!==m.repository||m.site_id!=='df8d4f20-8294-4f70-820a-731fa440156b'||Date.now()>=Date.parse(m.expires_at)||!secret)throw Error('Deployment authorization envelope unavailable or expired');
+          const key=hkdfSync('sha256',Buffer.from(secret),Buffer.from(envelope.salt,'hex'),Buffer.from('Recount deploy envelope v1'),32);
+          const d=createDecipheriv('aes-256-gcm',key,Buffer.from(envelope.iv,'hex'));d.setAAD(Buffer.from(JSON.stringify(m)));d.setAuthTag(Buffer.from(envelope.tag,'hex'));
+          let proxy;
+          try{proxy=Buffer.concat([d.update(Buffer.from(envelope.ciphertext,'base64')),d.final()]).toString();}catch{throw Error('Deployment capability could not be opened with the existing repository secret');}
+          if(!proxy.startsWith('https://netlify-mcp.netlify.app/proxy/')||/\s/.test(proxy))throw Error('Unexpected deployment endpoint');
+          console.log('::add-mask::'+proxy);console.log('::add-mask::'+proxy.split('/').at(-1));
+          const env={...process.env,CI:'true',NPM_CONFIG_LOGLEVEL:'error'};delete env.ASSEMBLYAI_API_KEY;delete env.GITHUB_TOKEN;
+          let output='',exit=0;
+          try{output=execFileSync('npx',['-y','@netlify/mcp@latest','--site-id',m.site_id,'--proxy-path',proxy],{cwd:'/tmp/recount-release-source',env,timeout:360000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']}).toString();}
+          catch(e){exit=e.status??1;output=String(e.stdout??'')+'\n'+String(e.stderr??'');}
+          output=output.split(proxy).join('[REDACTED_CAPABILITY]').split(secret).join('[REDACTED]');
+          output=output.replace(/https:\/\/netlify-mcp\.netlify\.app\/proxy\/[^\s"'<>]+/g,'[REDACTED_CAPABILITY]').replace(/\x1b\[[0-9;]*m/g,'');
+          fs.writeFileSync('/tmp/recount-release-receipt/deploy-helper.log',output.slice(-24000));
+          fs.writeFileSync('/tmp/recount-release-receipt/UPLOAD.json',JSON.stringify({site_id:m.site_id,source_commit:m.source_commit,helper_exit:exit,provider_requests:0,private_audio_uploaded:false,authorization:'short-lived encrypted capability; plaintext secrets never committed'},null,2));
+          console.log(JSON.stringify({deployment_helper_exit:exit,source_commit:m.source_commit,site_id:m.site_id}));
+          if(exit)process.exitCode=1;
+          JS
+      - name: Verify deployed asset bytes and nonsecret server configuration
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib,json,time,urllib.request,urllib.error
+          from pathlib import Path
+          origin='https://recount-voice-joseph.netlify.app'
+          names=['index.html','app.mjs','core.mjs','capture-gate.mjs','voice-runtime.mjs','audio-worklet.js','style.css','readback.mjs','streaming-request.mjs']
+          rows=[]
+          for attempt in range(6):
+              rows=[]
+              for name in names:
+                  local=Path('/tmp/recount-release-source/web',name).read_bytes();path='/' if name=='index.html' else '/'+name
+                  try:
+                      with urllib.request.urlopen(urllib.request.Request(origin+path,headers={'Cache-Control':'no-cache'}),timeout=12) as r:data=r.read(400000);status=r.status
+                      rows.append({'asset':name,'http_status':status,'sha256':hashlib.sha256(local).hexdigest(),'live_sha256':hashlib.sha256(data).hexdigest(),'matches':data==local})
+                  except Exception as e:rows.append({'asset':name,'error':type(e).__name__,'matches':False})
+              if all(r['matches'] for r in rows):break
+              time.sleep(5)
+          with urllib.request.urlopen(origin+'/api/config',timeout=12) as r:config=json.load(r)
+          request=urllib.request.Request(origin+'/api/token',data=b'{"consent":false}',headers={'Origin':origin,'Content-Type':'application/json'},method='POST')
+          try:
+              with urllib.request.urlopen(request,timeout=12) as r:rejected_status=r.status
+          except urllib.error.HTTPError as e:rejected_status=e.code
+          report={'source_commit':'b82c262cd962415721c5654541ec5c82bc49223b','origin':origin,'assets':rows,'all_assets_match':all(r['matches'] for r in rows),'voice_configured':config.get('voice_enabled'),'requires_access_code':config.get('requires_access_code'),'unauthorized_token_request_status':rejected_status,'provider_requests':0,'private_audio_uploaded':False}
+          Path('/tmp/recount-release-receipt/LIVE_ASSET_RECEIPT.json').write_text(json.dumps(report,indent=2))
+          assert report['all_assets_match'] and report['voice_configured'] and report['requires_access_code'] and rejected_status in [400,403], 'Live deployment verification failed'
+          print(json.dumps(report))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-production-recovery-release
+          path: /tmp/recount-release-receipt/
+          retention-days: 14
+          if-no-files-found: error
