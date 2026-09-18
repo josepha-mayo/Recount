@@ -1,0 +1,47 @@
+{
+  "schema": "recount-interactive-recovery-release-1",
+  "status": "DEPLOYED_SOFTWARE_CHECKS_PASSED_HUMAN_VALIDATION_NOT_PASSED",
+  "source_commit": "b82c262cd962415721c5654541ec5c82bc49223b",
+  "pull_request": 4,
+  "site": "https://recount-voice-joseph.netlify.app/",
+  "netlify_deploy_id": "6aad870e4dae12c26dae08e9",
+  "netlify_state": "ready",
+  "published_at": "2026-09-18T18:46:50.759Z",
+  "checks": {
+    "node": 146,
+    "http": 8,
+    "existing_browser": 32,
+    "interactive_recovery_browser": 13,
+    "public_site_browser": 20,
+    "deployed_assets_match": 9,
+    "deployed_assets_total": 9,
+    "unauthorized_token_status": 403,
+    "voice_configured": true
+  },
+  "check_scope": {
+    "interactive_recovery": "Actual browser, worklet and controls; generated silence and mocked provider/SpeechSynthesis events. Demonstrates recovery state transitions, not recognition accuracy.",
+    "public_site": "Actual production page, typed counts, review controls, CSV/session download bytes and desktop/mobile layout.",
+    "new_provider_audio_requests": 0,
+    "new_human_recordings": 0,
+    "private_audio_uploaded": false,
+    "human_holdout_status_changed": false,
+    "confidence_thresholds_changed": false
+  },
+  "changes": [
+    "Previously merged fragmented-count recovery and Needs review tray are now deployed.",
+    "Read-back timeout/error cancels speech before holding the microphone path.",
+    "Spoken count summaries retain item, quantity, units, echo and uncertainty without reciting long UI instructions.",
+    "Actual browser request uses a single JSON keyterms array and the observed 160/400 ms development profile."
+  ],
+  "runs": {
+    "regression": 35381776522,
+    "deploy": 35382100504,
+    "public_browser": 35382303646
+  },
+  "remaining": [
+    "Real interactive human voice/retry behavior has not passed validation.",
+    "Existing synthetic demonstration and presentation are historical, not evidence of this release passing a human test.",
+    "LabLab final submission not performed."
+  ],
+  "authentication": "Existing Netlify runtime variables retained; no user setup change. One-time deployment capability was encrypted for the authorized runner; not committed in plaintext."
+}
