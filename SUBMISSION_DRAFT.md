@@ -1,54 +1,57 @@
 # Recount: current submission draft
 
-**Not yet submitted.** The repository and application are independent. Team creation, human holdout scoring and the final event-form requirements are separate remaining steps.
+**Team exists. Project is not submitted.** This draft describes the deployed recovery release, not just the earlier synthetic-voice demonstration. The public team page was read again on 18 September 2026 and still stated that no submission had been made.
 
 ## Links
 
+- Team: https://lablab.ai/ai-hackathons/assemblyai-voice-agent-hackathon/recount
 - Source: https://github.com/josepha-mayo/Recount
-- App: https://recount-voice-joseph.netlify.app/
-- Event: https://lablab.ai/ai-hackathons/assemblyai-voice-agent-hackathon
-- Current software receipt: [migration/REGRESSION_RECEIPT.json](migration/REGRESSION_RECEIPT.json)
+- Application: https://recount-voice-joseph.netlify.app/
+- Deployed-release receipt: [verification/INTERACTIVE_RECOVERY_RELEASE_20260918.json](verification/INTERACTIVE_RECOVERY_RELEASE_20260918.json)
+- New public screenshot and narration build: https://github.com/josepha-mayo/Recount/actions/runs/35388255349
 
 ## Title
 
 Recount: Correction-Aware Voice Stocktaking
 
-## Summary
+## Short description
 
-A voice stocktaking assistant that keeps corrections on one draft, asks for explicit units, and saves only after quantity confirmation. Includes review holds, CSV export and replayable session history.
+A voice stocktaking prototype with correction-aware drafts, quantity-echo confirmation and a separate Needs review tray. Recover unfinished counts without silently saving them; export only confirmed stock.
 
 ## Description
 
-A spoken stock count becomes difficult when someone changes their mind. “Twelve, no, thirteen” should produce one checked record, not two inventory movements.
+A stock count is more than a transcript. “Twelve, no, thirteen” should update one pending count, not create two inventory movements. An unclear confirmation should not destroy otherwise useful work or freeze the rest of the stocktake.
 
-Recount uses AssemblyAI streaming transcription to stage an absolute count for one catalogue item. It asks for missing units, applies corrections to the pending draft, and requires an explicit quantity echo such as “confirm thirteen” before saving. Vague confirmations and unsupported unit conversions do not create stock records. Duplicate, missing or conflicting transcript events have explicit handling, including a review hold when the input cannot be trusted.
+Recount uses AssemblyAI streaming transcription with a deterministic, revision-aware count ledger. It asks for explicit units, keeps corrections attached to their draft and requires an exact quantity echo for spoken confirmation. An operator can also inspect the visual read-back and explicitly confirm it. Unsupported pack conversions and vague confirmations do not silently become stock records.
 
-The independent web app exports confirmed stock as CSV and can reopen a saved action history. In its recorded provider test, five finalized turns produced one Rice / 13 / bags record; a later cartons request did not change it. CSV content and session reopening were checked. This test used a disclosed synthetic voice through the actual provider, not a prewritten transcription response.
+The recovery release adds a Needs review tray. Moving to another named item parks an unfinished draft rather than discarding it or treating it as stock. Resuming it is a separate action, followed by review and confirmation. Confirmed records can be downloaded as CSV; a versioned session export preserves the action history for reopening.
 
-The standalone repository's fresh import passed 86 Node tests, eight HTTP tests and 18 Chromium checks. The first frozen human recording was **not a clean pass**: AssemblyAI returned 9 finalized turns for 18 scripted utterances, Recount produced 0 of 4 expected final counts, and it made 0 writes. The failure was preserved. A post-holdout development revision now accepts the natural `confirmed <quantity>` ASR variant and bounds turn silence; a second unseen recording is frozen before any new human-performance claim. The catalogue is small, and the app does not write into a production stock system, place orders or make payments.
+The microphone is muted during the local spoken read-back. A timeout or speech-output error cancels speech and holds the session for review instead of resuming capture while the application is still talking. Browser tests exercise these transitions with simulated speech events. They are not a replacement for human speech validation.
 
-## Media prepared
+The application is an independent Netlify project, with server-side provider credentials and short-lived streaming tokens. The catalogue currently contains four illustrative items. Recount does not place orders, make payments, message suppliers or modify a shop's production inventory.
 
-A 140.32-second, 1920-by-1080 narrated MP4 was delivered in the conversation as `Recount-Standalone-Narrated-Demo.mp4`. SHA-256: `890965557c3d0b1b1a29713cfe17988b9663b8b873a4bfd42462d953d710e972`.
+## Evidence and limits
 
-It contains the actual recorded independent-site provider sequence at its original speed, plus stock neural narration around it. The original synthetic microphone fixture is restored using the recorded capture offset. Browser speech synthesis output was not recorded. There is no human microphone holdout in this video. The MP4 and cover are available in the conversation's media packet; no public watch URL is asserted here.
+Two frozen, one-speaker human recording replays failed: each produced zero of four expected final counts and zero saves. They remain recorded failures. Zero writes alone is not proof of a useful or reliably safe product. Reuse of exposed recordings for recovery development is not held-out evidence, and unconfirmed review drafts are not completed counts.
 
-## Team setup
+Earlier authored synthetic-speech runs demonstrated actual AssemblyAI integration, including quantity correction and confirmation. They belong to earlier revisions and do not establish that the current release passes a human task.
 
-Team name: **Recount**. Member and leader: **Joseph Ayanda**, solo, Nigeria. Do not recruit or invite teammates.
+The current release receipt identifies application commit `b82c262cd962415721c5654541ec5c82bc49223b` and Netlify deploy `6aad870e4dae12c26dae08e9`. Its checks comprise 146 code tests, eight HTTP tests, 32 standard browser checks, 13 interactive-recovery browser checks using mocked provider/speech events, and 20 actual public-site checks. Nine deployed assets matched their expected source bytes. These different checks are not independent human trials and must not be relabelled as recognition accuracy.
 
-Team idea: “We are building Recount, a voice stocktaking assistant that keeps corrections on one draft and saves only after the quantity is confirmed. It uses AssemblyAI streaming transcription, explicit units and a replayable count history. Built solo by Joseph Ayanda.”
+A later media capture exercised nine asserted public-site behaviors using typed commands and checked actual CSV/session downloads. It made no provider audio calls and uploaded no human recording.
 
-LabLab's public guide documents profile completion, Discord connection and the Create or Join a team route. The exact logged-in form must still be read. Do not fabricate team creation or a final submission receipt.
+## Current media
 
-## Remaining gates
+`Recount-Recovery-Presentation.pdf` and its editable PowerPoint describe the deployed recovery workflow, its failure handling, and the two failed human recording tests. The accompanying `Recount-Recovery-Walkthrough.mp4` is a narrated slide walkthrough built from real public-site screenshots and typed-input actions. Narration uses a stock neural voice. It is **not** a real-time screen recording, a new microphone test or a human validation result.
 
-1. Create and verify the one-person Recount team.
-2. Score the existing frozen human holdout once when its recording is provided. Keep failures; a changed system needs a fresh holdout before a new human-performance claim.
-3. Finalize the required PDF presentation and any event-specific fields; upload the MP4 or supply its actual watch URL as required by the live form.
-4. Provide the private judge code only through a field explicitly private to judges. Do not publish it in source, media or team descriptions.
-5. Submit through the actual event form and read back a submission receipt.
+The older `Recount-Standalone-Narrated-Demo.mp4` remains historical provider-integration media using synthetic input. Do not silently present it as a demonstration of the new recovery release. Current assets are provided in the conversation; no LabLab upload or public YouTube watch URL is asserted here.
 
-The separate Netlify site's current variables remain in place. Its deployment was uploaded directly; automatic Git-to-Netlify linkage is not yet claimed. Future provider CI needs a separately configured secret in this new repository; the no-cost regression pipeline does not.
+## Remaining path
 
-Public form guide: https://lablab.ai/ai-articles/hackathon-guidelines
+1. Validate the current deployed microphone/read-back interaction in a genuine interactive session. Keep automatic voice completion, operator-assisted completion, wrong writes and unresolved items separate. Do not consume another unseen recording merely to tune known failures.
+2. Finalize a current-release voice demonstration and accurate submission assets from what that session actually establishes.
+3. Complete the existing LabLab team's form and asset uploads. Do not create another team or describe team creation as submission.
+4. Supply the judge code only in a field explicitly private to judges; never publish it in screenshots, source or descriptions.
+5. Read back the actual final submission confirmation.
+
+Runtime variables are already configured on the independent site. This work does not require recreating the repository, setting up another account, or copying provider keys into chat. Automatic Git-to-Netlify linkage remains separate from the verified direct deployment.
