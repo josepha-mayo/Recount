@@ -55,6 +55,7 @@ jobs:
           python -m playwright install --with-deps chromium
           python tests/browser.py | tee /tmp/recount-ci/browser.log
           cp verification/browser.json /tmp/recount-ci/browser.json
+          cp verification/desktop-*.png /tmp/recount-ci/
       - name: Receipt from actual outputs
         shell: bash
         run: |
