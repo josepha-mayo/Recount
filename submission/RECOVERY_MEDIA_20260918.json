@@ -1,0 +1,46 @@
+{
+  "schema": "recount-recovery-media-delivery-1",
+  "date": "2026-09-18",
+  "status": "RECOVERY_DEPLOYED_CURRENT_MEDIA_PREPARED_NOT_SUBMITTED",
+  "application": "https://recount-voice-joseph.netlify.app/",
+  "source_commit": "b82c262cd962415721c5654541ec5c82bc49223b",
+  "netlify_deploy_id": "6aad870e4dae12c26dae08e9",
+  "production_release_receipt": "verification/INTERACTIVE_RECOVERY_RELEASE_20260918.json",
+  "fresh_media_capture": {
+    "workflow_run": 35388255349,
+    "artifact_id": 10564632993,
+    "artifact_sha256": "6987516b78994d700d9af81f0cfe8dad504289414fc7260664062bf88ff67211",
+    "status": "passed",
+    "asserted_public_behaviors": 9,
+    "deployed_asset_hash_matches": 9,
+    "provider_audio_requests": 0,
+    "human_audio_uploads": 0,
+    "scope": "Actual production screenshots after authored typed-input controls and CSV/session download checks; not a microphone or recognition test."
+  },
+  "video": {
+    "file": "Recount-Recovery-Walkthrough.mp4",
+    "sha256": "ca13d73c98d59a5fbb03ebbae19879afad544a4ae678637768504eb9e62e38a5",
+    "bytes": 4457054,
+    "duration_seconds": 167.541333,
+    "dimensions": [1920, 1080],
+    "narrator": "Kokoro bf_emma stock neural voice",
+    "spoken_words_per_minute": 119.2948,
+    "overlapping_narration": false,
+    "full_decode_check": "passed",
+    "description": "Narrated slide walkthrough using verified production screenshots. Not a realtime recording, a voice clone or a fresh human/provider evaluation."
+  },
+  "presentation": {
+    "pdf": "Recount-Recovery-Presentation.pdf",
+    "pdf_sha256": "8352baf78784ddbba089863496d056b2339071d16e630230074ca138dad4b6aa",
+    "pptx": "Recount-Recovery-Presentation.pptx",
+    "pptx_sha256": "d29886e4f1d6cee998600691098dd7dad5b45288178734e36e7739cabc24d4bf",
+    "slides": 8,
+    "rendered_and_visually_checked": 8,
+    "contents": "Current correction/review/CSV workflow, read-back cancellation, separate software evidence and both failed human recording tests."
+  },
+  "delivery": "Conversation attachments. These compiled assets were not uploaded to LabLab or YouTube by this action.",
+  "human_status": "Both frozen recording replays remain NOT_A_CLEAN_PASS, with 0/4 expected final counts and zero saves. The interactive recovery release still needs a genuine live human interaction check.",
+  "team_status": "Existing solo Recount team confirmed; public page still reports no submission.",
+  "next_action": "Validate microphone/read-back/retry behavior in an actual interaction, keeping hands-free and operator-assisted completion separate. No further recording sweep, credential setup or diagnostic ZIP is requested from Joseph at this step.",
+  "privacy": "No private audio, raw human transcript, judge code, provider key, model weights or font files included in delivered media."
+}
