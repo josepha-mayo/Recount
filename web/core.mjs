@@ -11,7 +11,7 @@ const FILLER = new Set('count counted have i we there are is of the a total set 
 export const HOLD_REASONS = new Set(['stream_lost','unfinished_speech','transcript_conflict','stale_turn','invalid_event','audio_gap','consent_revoked']);
 const TASK_CONFIDENCE_FLOOR=.75; // development heuristic; must be recalibrated on human speech before production use.
 const VOICE_CONFIRM_FLOOR=.90; // stricter because this utterance commits the count.
-export function initial(){return {revision:0,pending:null,hold:null,counts:{},seen:{},history:[],reply:'Name one item, its count, and its unit. For example: rice twelve bags.'};}
+export function initial(){return {revision:0,pending:null,hold:null,counts:{},review:[],seen:{},history:[],reply:'Name one item, its count, and its unit. For example: rice twelve bags.'};}
 export function normalizeTranscript(s){return s.toLowerCase().replace(/[.,!?;:]/g,' ').replace(/(?<=[a-z])-(?=[a-z])/g,' ').replace(/\s+/g,' ').trim();}
 function cleanToken(s){return String(s??'').toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/g,'');}
 function num(words){
@@ -68,6 +68,7 @@ export function parse(text,previous=null){
   }
   if(!p.sku)return {error:'Which item? This prototype knows rice, beans, cooking oil and soap.'};
   if(p.unit&&p.unit!==CATALOG[p.sku].unit)return {error:`Use ${CATALOG[p.sku].unit} for ${CATALOG[p.sku].label}. I will not guess pack conversions.`};
+  if(previous?.identityUncertain){const restated=parts(chunks.at(-1));if(restated.sku&&restated.quantity!==null&&restated.unit)p.identityUncertain=false;}
   return {pending:p};
 }
 export function ready(p){return Boolean(p&&!p.blocked&&CATALOG[p.sku]&&Number.isSafeInteger(p.quantity)&&p.quantity>=0&&p.quantity<=9999&&p.unit===CATALOG[p.sku].unit);}
@@ -79,10 +80,24 @@ function describe(p){
   const warning=p.speechEvidence?.min_word_confidence<TASK_CONFIDENCE_FLOOR?' One non-number word was low-confidence, so verify this read-back carefully.':'';
   return `${CATALOG[p.sku].label}: ${p.quantity} ${p.unit}. To save hands-free, say “confirm ${p.quantity}”, or press Confirm count. This replaces its count, not adds to it.${warning}`;
 }
+function itemFocus(text){
+  const t=normalizeTranscript(text);
+  if(Object.hasOwn(CATALOG,t))return t;
+  return t==='cooking oil'?'oil':null;
+}
+function parkPending(s,reason){
+  if(!s.pending)return;
+  if(s.review.length>=100)throw Error('Review queue is full; resolve an earlier draft first');
+  s.review.push({id:`review:${s.revision}`,parkedAt:s.revision,reason,draft:structuredClone(s.pending)});
+  s.pending=null;
+}
+function commandConfidence(action){
+  return action.source==='assemblyai'?(action.recognition?.command_confidence??0):action.confidence;
+}
 function validKey(x){return typeof x==='string'&&/^[a-zA-Z0-9:_-]{1,140}$/.test(x);}
 function savePending(s){s.counts[s.pending.sku]={quantity:s.pending.quantity,unit:s.pending.unit,revision:s.revision};s.reply=`Saved ${CATALOG[s.pending.sku].label}: ${s.pending.quantity} ${s.pending.unit}. What is the next item?`;s.pending=null;s.hold=null;}
 export function reduce(before,action){
-  if(!action||!['turn','confirm','discard','hold'].includes(action.kind))throw Error('Unknown action');
+  if(!action||!['turn','confirm','discard','hold','resume'].includes(action.kind))throw Error('Unknown action');
   if(action.kind==='turn'&&action.final===false)return before;
   if(action.kind==='turn'){
     if(!validKey(action.id)||typeof action.text!=='string'||!action.text.trim()||action.text.length>500)throw Error('Invalid turn');
@@ -90,7 +105,7 @@ export function reduce(before,action){
     if(!Number.isFinite(action.confidence)||action.confidence<0||action.confidence>1)throw Error('Invalid recognition confidence');
     if(Object.hasOwn(before.seen,action.id)){
       const prior=before.seen[action.id];
-      if(prior.text===normalizeTranscript(action.text) && prior.confidence===action.confidence && prior.source===action.source)return before;
+      if(prior.text===normalizeTranscript(action.text) && prior.confidence===action.confidence && prior.source===action.source && prior.commandConfidence===commandConfidence(action))return before;
       throw Error('Conflicting transcript for an existing turn; repeat as a new turn');
     }
   }
@@ -102,19 +117,69 @@ export function reduce(before,action){
     s.hold=action.reason;if(s.pending)s.pending.blocked=true;
     s.reply='Audio or transcript integrity needs review. Repeat the complete item, number and unit, or explicitly discard this uncertain input.';return s;
   }
+  if(action.kind==='resume'){
+    if(s.hold)throw Error('Resolve the audio integrity hold before resuming a review');
+    const index=s.review.findIndex(r=>r.id===action.reviewId);
+    if(index<0)throw Error('Review draft is no longer available');
+    const [entry]=s.review.splice(index,1);
+    parkPending(s,'operator_switched_review');s.pending=entry.draft;
+    if((s.counts[s.pending.sku]?.revision??0)>entry.parkedAt){s.pending.blocked=true;s.pending.identityUncertain=true;s.reply='A newer count was confirmed after this review was parked. Restate the complete count before saving it.';}
+    else s.reply='Review restored. '+describe(s.pending);return s;
+  }
   if(action.kind==='discard'){s.hold=null;s.pending=null;s.reply='Draft discarded. Confirmed counts are unchanged.';return s;}
   if(action.kind==='confirm'){
     if(s.hold || !ready(s.pending))throw Error('A complete, clarified draft is required');
     savePending(s);return s;
   }
-  s.seen[action.id]={text:normalizeTranscript(action.text),confidence:action.confidence,source:action.source};
+  s.seen[action.id]={text:normalizeTranscript(action.text),confidence:action.confidence,source:action.source,commandConfidence:commandConfidence(action)};
+  const text=normalizeTranscript(action.text);
+  const isDiscard=['cancel','discard','discard count','cancel count'].includes(text);
+  if(isDiscard){
+    // Cancellation never writes a stock row. Judge the action word, not its filler noun.
+    if(commandConfidence(action)<TASK_CONFIDENCE_FLOOR){
+      s.reply='Cancellation was unclear. Say discard again, or stop audio and use Discard draft.';return s;
+    }
+    s.hold=null;s.pending=null;s.reply='Draft discarded. Confirmed counts and other reviews are unchanged.';return s;
+  }
+  const echo=confirmationNumber(text);
+  if(echo?.confirmEcho!==undefined){
+    // Uncertainty in a confirmation does not make the earlier count itself uncertain.
+    // Neither threshold is lowered; no confirmation supplies a missing draft quantity.
+    if(s.hold||!ready(s.pending))s.reply='Nothing complete is ready to save. Repeat the full item, number and unit first.';
+    else if(echo.confirmEcho!==s.pending.quantity)s.reply=`The confirmation said ${echo.confirmEcho}, but the read-back is ${s.pending.quantity}. Nothing was saved. Say “confirm ${s.pending.quantity}” or correct the count.`;
+    else if(action.source==='assemblyai' && (commandConfidence(action)<TASK_CONFIDENCE_FLOOR || (action.recognition?.quantity_confidence??0)<VOICE_CONFIRM_FLOOR))
+      s.reply='The confirmation number or command was not clear enough to commit. The draft is preserved. Repeat the confirmation number, or stop audio and review it on screen.';
+    else if(action.confidence<TASK_CONFIDENCE_FLOOR)s.reply='The confirmation was uncertain. The draft is preserved; nothing was saved.';
+    else savePending(s);
+    return s;
+  }
+  if(['no','actually','sorry','make that','correction'].includes(text) && s.pending && !s.hold && !s.pending.identityUncertain){
+    if(commandConfidence(action)<TASK_CONFIDENCE_FLOOR){s.pending.blocked=true;s.reply='The correction marker was uncertain. Repeat the full count.';return s;}
+    // A fresh correction invalidates the old number; a unit-only fragment cannot restore it.
+    s.pending={sku:s.pending.sku,quantity:null,unit:null,blocked:false,awaitingCorrection:true};
+    s.reply=`Correcting ${CATALOG[s.pending.sku].label}. Say the new number and unit. Nothing is ready to save.`;return s;
+  }
+  const focus=itemFocus(action.text);
+  if(focus && !s.hold){
+    const confidence=action.source==='assemblyai'?(action.recognition?.item_confidence??0):action.confidence;
+    if(confidence<TASK_CONFIDENCE_FLOOR){s.reply='The item name was uncertain. Repeat it; the current draft is unchanged.';return s;}
+    if(s.pending?.sku!==focus){
+      parkPending(s,'explicit_item_focus');
+      s.pending={sku:focus,quantity:null,unit:null,blocked:false};
+      if(action.recognition)s.pending.speechEvidence=structuredClone(action.recognition);
+    }
+    s.reply=describe(s.pending)+(s.review.length?' Earlier drafts are saved in Needs review, not confirmed stock.':'');return s;
+  }
   if(action.confidence<TASK_CONFIDENCE_FLOOR){if(s.pending)s.pending.blocked=true;s.reply='The task-critical part of that transcript is uncertain. Please repeat the full item, number and unit.';return s;}
   let result=parse(action.text,s.pending);
   if(s.hold && result.pending){
     const restatement=parse(action.text);
     if(!restatement.pending || !ready(restatement.pending))result={error:'Repeat the entire uncertain count, including item and unit, or discard it.'};
   }
-  if(result.error){if(s.pending)s.pending.blocked=true;s.reply=result.error;}
+  if(result.error){
+    if(s.pending){s.pending.blocked=true;const named=normalizeTranscript(action.text).split(' ').filter(w=>Object.hasOwn(CATALOG,w));if(named.some(w=>w!==s.pending.sku))s.pending.identityUncertain=true;}
+    s.reply=result.error;
+  }
   else if(result.cancel){s.hold=null;s.pending=null;s.reply='Draft discarded. Confirmed counts are unchanged.';}
   else if(result.confirmRequested){s.reply=ready(s.pending)?describe(s.pending):'Nothing complete to save yet. '+describe(s.pending);}
   else if(result.confirmEcho!==undefined){
@@ -140,9 +205,10 @@ export function fromAssembly(message,session,revision){
   const nums=rows.filter(x=>NUMBER.has(x.token)||/^\d+$/.test(x.token));
   const units=rows.filter(x=>Object.hasOwn(UNITS,x.token));
   const items=rows.filter(x=>Object.hasOwn(CATALOG,x.token));
+  const commands=rows.filter(x=>['confirm','confirmed','save','saved','discard','cancel','no','actually','sorry','make','that','correction'].includes(x.token));
   const semantic=[...nums,...units,...items];
   const taskRows=nums.length?nums:(semantic.length?semantic:rows);
-  const recognition={policy:'quantity-first-v1',min_word_confidence:Math.min(...rows.map(x=>x.confidence)),quantity_confidence:nums.length?Math.min(...nums.map(x=>x.confidence)):null,unit_confidence:units.length?Math.min(...units.map(x=>x.confidence)):null,item_confidence:items.length?Math.min(...items.map(x=>x.confidence)):null,task_confidence:Math.min(...taskRows.map(x=>x.confidence)),development_floor:TASK_CONFIDENCE_FLOOR,voice_confirm_floor:VOICE_CONFIRM_FLOOR};
+  const recognition={policy:'quantity-first-v1',command_confidence:commands.length?Math.min(...commands.map(x=>x.confidence)):null,min_word_confidence:Math.min(...rows.map(x=>x.confidence)),quantity_confidence:nums.length?Math.min(...nums.map(x=>x.confidence)):null,unit_confidence:units.length?Math.min(...units.map(x=>x.confidence)):null,item_confidence:items.length?Math.min(...items.map(x=>x.confidence)):null,task_confidence:Math.min(...taskRows.map(x=>x.confidence)),development_floor:TASK_CONFIDENCE_FLOOR,voice_confirm_floor:VOICE_CONFIRM_FLOOR};
   return {kind:'turn',id:`${session}:${message.turn_order}`,text:message.transcript,confidence:recognition.task_confidence,recognition,source:'assemblyai',final:true,revision};
 }
 export function replay(log){
