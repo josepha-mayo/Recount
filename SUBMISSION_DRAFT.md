@@ -25,7 +25,7 @@ Recount uses AssemblyAI streaming transcription to stage an absolute count for o
 
 The independent web app exports confirmed stock as CSV and can reopen a saved action history. In its recorded provider test, five finalized turns produced one Rice / 13 / bags record; a later cartons request did not change it. CSV content and session reopening were checked. This test used a disclosed synthetic voice through the actual provider, not a prewritten transcription response.
 
-The standalone repository's fresh import passed 86 Node tests, eight HTTP tests and 18 Chromium checks. Human speech and shopkeeper usability evaluation remain pending. The catalogue is small, and the app does not write into a production stock system, place orders or make payments.
+The standalone repository's fresh import passed 86 Node tests, eight HTTP tests and 18 Chromium checks. The first frozen human recording was **not a clean pass**: AssemblyAI returned 9 finalized turns for 18 scripted utterances, Recount produced 0 of 4 expected final counts, and it made 0 writes. The failure was preserved. A post-holdout development revision now accepts the natural `confirmed <quantity>` ASR variant and bounds turn silence; a second unseen recording is frozen before any new human-performance claim. The catalogue is small, and the app does not write into a production stock system, place orders or make payments.
 
 ## Media prepared
 
