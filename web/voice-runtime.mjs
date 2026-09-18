@@ -3,6 +3,7 @@
    streaming worklet, then listening resumes. Permanent provider keys never
    enter this module. */
 import {CaptureGate} from './capture-gate.mjs';
+import {streamingURL} from './streaming-request.mjs';
 export class VoiceRuntime {
   constructor({getRevision,onTurn,onHold,onPartial=()=>{},onState=()=>{},onError=()=>{},promptReply=async()=>{},cancelPrompt=()=>{},deps={}}){
     Object.assign(this,{getRevision,onTurn,onHold,onPartial,onState,onError,promptReply,cancelPrompt});
@@ -34,7 +35,7 @@ export class VoiceRuntime {
     // fused into one worklet packet. The normal port handler forwards the tail.
     try{v.node.port.postMessage({type:'drain'});}catch{this.fail(v,'audio_gap');return;}
     this.onState('prompting');
-    try{await this.promptReply();}catch{this.onError('Read-back audio failed. The visual read-back remains available.');}
+    try{await this.promptReply();}catch{this.onError('Read-back failed or timed out. Audio stopped; review the held draft.');this.fail(v,'audio_gap');return;}
     if(!this.live(v)||v.gate.phase!=='listening'){v.prompting=false;return;}
     try{v.input.connect(v.node);}catch{this.fail(v,'audio_gap');return;}
     v.prompting=false;this.onState('listening');
@@ -60,8 +61,8 @@ export class VoiceRuntime {
       const data=await res.json();
       if(!this.live(v))return false;
       if(!res.ok||typeof data.token!=='string'||!Number.isFinite(data.max_session_duration_seconds))throw Error(data?.error||'Provider token unavailable');
-      const query=new URLSearchParams({sample_rate:String(v.ctx.sampleRate),encoding:'pcm_s16le',speech_model:data.speech_model,min_turn_silence:'450',max_turn_silence:'1200',token:data.token});
-      v.ws=new this.d.WebSocket('wss://streaming.assemblyai.com/v3/ws?'+query);
+      const url=streamingURL({sampleRate:v.ctx.sampleRate,speechModel:data.speech_model,token:data.token});
+      v.ws=new this.d.WebSocket(url);
       v.ws.onmessage=async e=>{
         if(!this.live(v))return;
         try{
