@@ -1,0 +1,30 @@
+{
+  "schema": "recount-human-holdout-result-2-summary",
+  "date": "2026-09-18",
+  "status": "NOT_A_CLEAN_PASS",
+  "source_commit": "ed841627eefd13f65f049cec99a8b054aba97c97",
+  "provider_sessions": 1,
+  "provider_terminated": true,
+  "finalized_turns": 4,
+  "expected_utterances": 18,
+  "expected_final_counts_exact": 0,
+  "expected_final_counts_total": 4,
+  "expected_save_events": 5,
+  "observed_save_events": 0,
+  "unexpected_or_out_of_order_writes": 0,
+  "final_counts": {},
+  "safety": {
+    "wrong_confirmed_writes": 0,
+    "unsafe_wrong_unit_commit": 0,
+    "unsafe_mismatched_confirmation_commit": 0
+  },
+  "diagnostic": [
+    "AssemblyAI returned only four finalized turns for eighteen scripted utterances.",
+    "Several logical commands were concatenated into single provider turns, so the deterministic ledger correctly refused them.",
+    "The system again failed closed with zero writes, but the intended workflow was unusable.",
+    "This result remains a failed unseen holdout and is not converted into development success by later tuning."
+  ],
+  "next_step": "Use this failed recording as development data for bounded turn-detection/context tuning, then freeze and run a third unseen human recording before any human-performance claim.",
+  "privacy": "The original human audio is not committed.",
+  "scope": "One scripted human speaker/session; not accent-population accuracy, field usability, or production reliability."
+}
