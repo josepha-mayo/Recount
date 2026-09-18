@@ -1,0 +1,44 @@
+name: Recount recovery walkthrough media
+on:
+  push:
+    branches: [delivery/recovery-review-20260918]
+    paths: [.github/workflows/recovery-walkthrough-media.yml]
+permissions:
+  contents: read
+concurrency:
+  group: recount-recovery-walkthrough
+  cancel-in-progress: false
+jobs:
+  media:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Pin the deployed application and keep only the new media builder
+        run: |
+          set -euo pipefail
+          cp submission/build_recovery_walkthrough.py /tmp/build_recovery_walkthrough.py
+          git fetch --depth=1 origin b82c262cd962415721c5654541ec5c82bc49223b
+          git checkout --detach b82c262cd962415721c5654541ec5c82bc49223b
+          mkdir -p submission
+          cp /tmp/build_recovery_walkthrough.py submission/build_recovery_walkthrough.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned capture and stock-speech tools
+        run: |
+          python -m pip install playwright==1.57.0 kokoro-onnx==0.4.9 soundfile==0.13.1 numpy==2.2.6 onnxruntime==1.22.1
+          python -m playwright install --with-deps chromium
+      - name: Capture public controls and produce paced narration
+        env:
+          ALLOW_ASSEMBLYAI: 'false'
+        run: python submission/build_recovery_walkthrough.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-recovery-walkthrough-assets
+          path: /tmp/recount-recovery-media/
+          retention-days: 14
+          if-no-files-found: error
