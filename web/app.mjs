@@ -25,6 +25,17 @@ function render(){
   }
   const n=Object.keys(state.counts).length;$('countBadge').textContent=`${n} item${n===1?'':'s'}`;$('empty').hidden=n>0;
   $('csv').disabled=!n||Boolean(state.hold)||locked;$('session').disabled=locked;
+  $('reviewPanel').hidden=state.review.length===0;$('reviewCount').textContent=`${state.review.length} drafts`;
+  const reviewRows=$('reviewRows');reviewRows.replaceChildren();
+  for(const entry of state.review){
+    const row=document.createElement('div');row.className='review-row';
+    const label=document.createElement('span'),d=entry.draft;
+    label.textContent=`${CATALOG[d.sku].label}: ${d.quantity??'?'} ${d.unit??'unit?'}${d.blocked?' · clarification needed':''}`;
+    const button=document.createElement('button');button.className='secondary';button.textContent='Review';
+    button.disabled=locked||Boolean(state.hold);button.dataset.reviewId=entry.id;
+    button.onclick=()=>userAction({kind:'resume',reviewId:entry.id});
+    row.append(label,button);reviewRows.append(row);
+  }
   const last=state.history.at(-1);$('last').textContent=last?`${last.kind.toUpperCase()} · revision ${state.revision}\n${last.text??last.reason??state.reply}\n${last.source??'explicit local control'}`:'Waiting for a count.';
   const phase=voice.phase();
   $('mode').textContent=locked?`AUDIO ${phase.toUpperCase()}`:state.hold?'REVIEW REQUIRED':'TEXT / REVIEW MODE';
@@ -46,12 +57,12 @@ for(const b of document.querySelectorAll('[data-example]'))b.onclick=()=>typed(b
 $('confirm').onclick=()=>userAction({kind:'confirm'});$('discard').onclick=()=>userAction({kind:'discard'});
 function download(name,data,type){const u=URL.createObjectURL(new Blob([data],{type})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
 $('csv').onclick=()=>{try{if(voice.active())throw Error('Finish the voice session before export.');download('recount-stock.csv',exportCSV(state),'text/csv');}catch(e){error(e);}};
-$('session').onclick=()=>{if(voice.active())return error('Finish the voice session before saving.');download('recount-session.json',JSON.stringify({schema:'recount-session-1',history:state.history},null,2),'application/json');};
+$('session').onclick=()=>{if(voice.active())return error('Finish the voice session before saving.');download('recount-session.json',JSON.stringify({schema:'recount-session-2',history:state.history},null,2),'application/json');};
 $('load').onchange=async()=>{try{
   if(voice.active())throw Error('Finish the voice session before opening a session.');
   const f=$('load').files[0];if(!f)return;if(f.size>1_000_000)throw Error('Session exceeds 1 MB');
   const rev=state.revision,data=JSON.parse(await f.text());if(voice.active()||state.revision!==rev)throw Error('Work changed while opening the file. Try again.');
-  if(data.schema!=='recount-session-1')throw Error('Unknown session schema');
+  if(data.schema!=='recount-session-2')throw Error('This session uses an older or unknown ledger version. Keep the original file; open it with its matching Recount version.');
   state=replay(data.history);render();$('error').textContent='';
 }catch(e){error(e);}};
 $('listen').onclick=async()=>{try{
@@ -68,5 +79,5 @@ $('consent').onchange=()=>{if(!$('consent').checked){cancelSpeech();voice.revoke
 window.addEventListener('pagehide',()=>{cancelSpeech();voice.revoke();});
 render();try{
   const r=await fetch('/api/config',{cache:'no-store'});if(!r.ok)throw Error('Configuration unavailable');config=await r.json();
-  $('providerStatus').textContent=config.voice_enabled?(config.requires_access_code?'Judge deployment is provider-ready. Enter the supplied access code, permit test audio, then start voice mode. Real synthetic-provider validation passed; human microphone holdout remains pending.':'Provider configured. Real AssemblyAI synthetic-audio validation passed. During a live session, Recount mutes capture while speaking each local read-back, then resumes listening; human microphone validation remains pending.'):'Voice mode is intentionally disabled on this deployment until its server-side AssemblyAI key is configured. Text/review mode still works.';render();
+  $('providerStatus').textContent=config.voice_enabled?(config.requires_access_code?'Judge deployment is provider-ready. Enter the supplied access code, permit test audio, then start voice mode. Real synthetic-provider validation passed; human voice validation has not passed; this recovery revision is experimental.':'Provider configured. Real AssemblyAI synthetic-audio validation passed. During a live session, Recount mutes capture while speaking each local read-back, then resumes listening; human voice validation has not passed; this recovery revision is experimental.'):'Voice mode is intentionally disabled on this deployment until its server-side AssemblyAI key is configured. Text/review mode still works.';render();
 }catch{error('Open the app through its local server or verified deployment, not by double-clicking this file.');}
