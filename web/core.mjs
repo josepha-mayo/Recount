@@ -39,7 +39,7 @@ function parts(text){
   return {sku:skus[0]??null,unit:units[0]??null,quantity};
 }
 function confirmationNumber(t){
-  const m=t.match(/^(?:confirm|save)\s+(.+)$/);if(!m)return null;
+  const m=t.match(/^(?:confirm|confirmed|save|saved)\s+(.+)$/);if(!m)return null;
   const words=m[1].split(' ');
   if(!words.length||words.some(w=>!(NUMBER.has(w)||/^\d+$/.test(w)||w==='and')))return {error:'Confirm by repeating only the number, for example: confirm thirteen.'};
   const value=num(words);return value===null?{error:'I could not verify that confirmation number.'}:{confirmEcho:value};
@@ -47,7 +47,7 @@ function confirmationNumber(t){
 export function parse(text,previous=null){
   const t=normalizeTranscript(text);
   if(['cancel','discard','discard count','cancel count'].includes(t))return {cancel:true};
-  if(['confirm','save','save count','confirm count'].includes(t))return {confirmRequested:true};
+  if(['confirm','confirmed','save','saved','save count','confirm count','confirmed count'].includes(t))return {confirmRequested:true};
   const confirmation=confirmationNumber(t);if(confirmation)return confirmation;
   if(['read back','read it back','repeat'].includes(t))return {repeat:true};
   const clauses=t.split(/\b(?:no|actually|sorry|make that|correction)\b/).map(s=>s.trim());

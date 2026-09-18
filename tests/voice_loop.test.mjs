@@ -9,7 +9,7 @@ function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {
 function setup({promptMode='immediate'}={}){
   let state=initial(),prompts=0,cancels=0;const sockets=[],nodes=[],sources=[];let promptGate=deferred();
   const track={stops:0,stop(){this.stops++;}};const stream={getTracks:()=>[track]};
-  class Socket{static OPEN=1;constructor(){this.readyState=1;this.bufferedAmount=0;this.sent=[];sockets.push(this);}send(x){this.sent.push(x);}close(){this.readyState=3;}async emit(x){return this.onmessage({data:JSON.stringify(x)});}}
+  class Socket{static OPEN=1;constructor(url){this.url=url;this.readyState=1;this.bufferedAmount=0;this.sent=[];sockets.push(this);}send(x){this.sent.push(x);}close(){this.readyState=3;}async emit(x){return this.onmessage({data:JSON.stringify(x)});}}
   class Source{constructor(){this.connects=0;this.disconnects=0;sources.push(this);}connect(){this.connects++;}disconnect(){this.disconnects++;}}
   class Context{constructor(){this.sampleRate=16000;this.destination={};this.audioWorklet={addModule:async()=>{}};}createMediaStreamSource(){return new Source();}resume(){return Promise.resolve();}close(){return Promise.resolve();}}
   class Worklet{constructor(){this.connects=0;this.disconnects=0;this.messages=[];this.port={postMessage:m=>this.messages.push(m)};nodes.push(this);}connect(){this.connects++;}disconnect(){this.disconnects++;}}
@@ -44,3 +44,5 @@ test('stop during local read-back cancels the prompt and never reconnects captur
 test('wrong-unit read-back remains unsaveable even though the voice loop continues',async()=>{
   const f=setup(),ws=await f.begin();await ws.emit(turn('Rice, 12 cartons.',0,[w('Rice,'),w('12'),w('cartons.')]));assert.equal(f.state.pending,null);assert.match(f.state.reply,/not guess pack conversions/);assert.equal(f.runtime.phase(),'listening');f.runtime.revoke();
 });
+
+test('transactional streaming URL bounds provider turn silence',async()=>{const f=setup(),ws=await f.begin();const u=new URL(ws.url);assert.equal(u.searchParams.get('speech_model'),'universal-3-5-pro');assert.equal(u.searchParams.get('min_turn_silence'),'450');assert.equal(u.searchParams.get('max_turn_silence'),'1200');f.runtime.revoke();});

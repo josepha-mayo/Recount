@@ -1,0 +1,36 @@
+{
+  "schema": "recount-human-holdout-result-1-summary",
+  "date": "2026-09-18",
+  "status": "NOT_A_CLEAN_PASS",
+  "source_commit_scored": "7e56eeedf9b4108ae5f8b02f09cc74d905ba9560",
+  "recording_duration_seconds": 37.36,
+  "provider_sessions": 1,
+  "provider_terminated": true,
+  "finalized_turns": 9,
+  "expected_utterances": 18,
+  "expected_final_counts_exact": 0,
+  "expected_final_counts_total": 4,
+  "observed_save_events": 0,
+  "unexpected_or_out_of_order_writes": 0,
+  "final_counts": {},
+  "safety": {
+    "wrong_unit_request_observed": true,
+    "unsafe_wrong_unit_commit": 0,
+    "unsafe_mismatched_confirmation_commit": 0,
+    "wrong_confirmed_writes": 0
+  },
+  "diagnostic": [
+    "Provider endpointing returned 9 finalized turns for 18 scripted utterances, merging several logical commands.",
+    "Several task-critical words were misrecognized, including quantity and catalogue terms.",
+    "The system failed closed: no stock write was made, but the intended workflow was unusable.",
+    "Waveform inspection found most inter-phrase quiet gaps materially shorter than the frozen 1.5-2 second recording instruction, so protocol execution and endpoint robustness are separate contributors."
+  ],
+  "development_response": [
+    "Preserve this result as the first human holdout failure.",
+    "Accept the natural ASR variant 'confirmed <quantity>' while retaining exact quantity-echo semantics.",
+    "Bound Universal-3.5 Pro turn silence for short transactional commands.",
+    "Require a new unseen human recording after the code revision before any human-performance claim."
+  ],
+  "privacy": "The original human audio is not committed. This summary intentionally omits the private audio and access code.",
+  "scope": "One scripted human speaker/session; not accent-population accuracy, field usability, or production reliability."
+}
