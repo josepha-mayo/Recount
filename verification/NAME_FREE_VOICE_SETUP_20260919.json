@@ -1,0 +1,58 @@
+{
+  "schema": "recount-name-free-voice-setup-release-1",
+  "date": "2026-09-19",
+  "status": "RENAMED_REDEPLOYED_SOFTWARE_CHECKS_PASSED",
+  "site": "https://recount-voice.netlify.app/",
+  "site_id": "df8d4f20-8294-4f70-820a-731fa440156b",
+  "netlify_deploy_id": "6aaecd4ab3d3a8a18005e034",
+  "netlify_state": "ready",
+  "tested_and_deployed_source": "d9773a1d06c9b3daee1681a461e7985f3367fb5e",
+  "merged_commit": "1011dca67bbfed42ecf5817570b2558fabe4b554",
+  "pull_request": 6,
+  "configuration": "Existing project renamed; allowed origin updated and new deployment verified. Provider key and judge code were not changed.",
+  "private_report_review": {
+    "method": "Local replay of the supplied action history against the exact core bytes identified in the report; all reported ledger fields reproduced.",
+    "provider_sessions_begun": 2,
+    "final_events": 6,
+    "completed_spoken_readbacks": 0,
+    "disabled_readbacks": 6,
+    "complete_corrected_draft_present": true,
+    "confirmed_records": 0,
+    "confirmation_rejection": "The confirmation number exceeded the existing number floor, but the recognized command word was below the existing command floor. This was not a lost-correction or premature-readback rejection.",
+    "privacy_finding": "An access code had been entered as a typed stock transcript and therefore appeared in the original report history. The original report is kept private and unchanged."
+  },
+  "shipped_changes": [
+    "Spoken replies default on beside microphone setup, with a clear on/off status and the setting locked during active capture.",
+    "Recognizable access-code input is directed to the password field without entering the count ledger.",
+    "Exported voice-report copies redact recognizable and currently configured codes and disclose redactions; arbitrary sensitive speech still requires user review.",
+    "A session export containing recognized credential text is blocked instead of silently rewriting its replayable history.",
+    "Current repository instructions and example environment use the name-free URL. Historical receipts retain their original source locations."
+  ],
+  "verification": {
+    "integration_run": 35459454777,
+    "node_tests": 167,
+    "http_tests": 8,
+    "standard_browser_checks": 32,
+    "readback_barrier_checks": 12,
+    "new_setup_browser_checks": 12,
+    "merge_regression_run": 35459579138,
+    "merge_barrier_run": 35459579165,
+    "deployment_run": 35459693401,
+    "deployment_artifact": 10589397624,
+    "deployment_artifact_sha256": "028ede607443ea6cc930b30b17bccf60b17f5f996f2977c6bdf58ea8addc68f6",
+    "deployed_assets_matched": 10,
+    "public_browser_checks": 8,
+    "new_origin_accepted_by_origin_guard": true,
+    "unrelated_origin_rejected": true,
+    "voice_configuration_retained": true,
+    "local_private_report_redaction_check": "One known credential value removed from an export copy; original report and counts remained unchanged."
+  },
+  "unchanged": {
+    "core_sha256": "4f1694bef7c978e92effbce2dc5ac6c1ec3874ab62d08b2e288d6704faa42854",
+    "parser_and_confidence_floors": true,
+    "original_human_results": true,
+    "new_provider_audio_calls": 0,
+    "private_report_or_audio_published": false
+  },
+  "claim_boundary": "The supplied interaction produced a correct unconfirmed draft, not a saved stock record or a successful spoken-readback interaction. New checks use authored software inputs, not another human validation."
+}
