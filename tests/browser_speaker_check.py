@@ -27,7 +27,7 @@ try:
    def token(r):
     raise AssertionError('No token should be requested during speaker test')
    c.route('**/api/token',token)
-   p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.goto(BASE+'/',wait_until='networkidle');p.locator('summary').click();p.locator('#consent').check()
+   p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.goto(BASE+'/',wait_until='networkidle');p.locator('summary').click();p.locator('#voiceEngine').select_option('native');p.locator('#consent').check()
    expect(p.locator('#listen')).to_be_disabled();checks.append(f'{width}:voice waits for audible-output acknowledgement')
    p.locator('#speakerTest').click();expect(p.locator('#speakerTestStatus')).to_contain_text('synthesis-unavailable');expect(p.locator('#listen')).to_be_disabled()
    assert p.evaluate('__speaker.microphoneRequests===0 && __speaker.sockets.length===0');checks.append(f'{width}:failed speech engine blocks capture before provider access')
@@ -45,7 +45,7 @@ try:
   c=b.new_context(accept_downloads=True);c.add_init_script(FIXTURE);p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)))
   c.route('**/api/config',lambda r:r.fulfill(json={'voice_enabled':True,'requires_access_code':False,'csrf':'fixture'}))
   c.route('**/api/token',lambda r:r.fulfill(json={'token':'fixture-only','max_session_duration_seconds':90,'speech_model':'universal-3-5-pro'}))
-  p.goto(BASE+'/',wait_until='networkidle');p.locator('summary').click();p.evaluate("__speaker.mode='success'");p.locator('#speakerTest').click();p.locator('#speakerHeard').click();p.locator('#consent').check();p.locator('#listen').click();expect(p.locator('#mode')).to_have_text('AUDIO LISTENING')
+  p.goto(BASE+'/',wait_until='networkidle');p.locator('summary').click();p.locator('#voiceEngine').select_option('native');p.evaluate("__speaker.mode='success'");p.locator('#speakerTest').click();p.locator('#speakerHeard').click();p.locator('#consent').check();p.locator('#listen').click();expect(p.locator('#mode')).to_have_text('AUDIO LISTENING')
   p.evaluate("__speaker.mode='fail';__speaker.error='not-allowed'")
   msg={'type':'Turn','turn_order':0,'end_of_turn':True,'transcript':'Rice 12 bags','words':[{'text':x,'confidence':.99,'start':i*60,'end':i*60+50} for i,x in enumerate('Rice 12 bags'.split())]}
   p.evaluate('(m)=>__speaker.sockets[0].emit(m)',msg);expect(p.locator('#mode')).to_have_text('REVIEW REQUIRED');expect(p.locator('#error')).to_contain_text('not-allowed');expect(p.locator('#rows tr')).to_have_count(0);expect(p.locator('#listen')).to_be_disabled();checks.append('runtime: read-back rejection text survives holding the draft and prevents blind restart')

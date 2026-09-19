@@ -28,7 +28,7 @@ def open_session(browser,width):
   elif q.request.url.startswith(BASE+'/'):q.continue_()
   else:raise AssertionError('Unexpected external request')
  ctx.route('**/*',route);page=ctx.new_page();page.on('pageerror',lambda e:errors.append(str(e)))
- page.goto(BASE+'/',wait_until='networkidle');page.locator('summary').click();page.locator('#consent').check();page.locator('#speak').check();page.locator('#speakerTest').click();page.evaluate('window.__barrier.utterances.at(-1).onend()');page.locator('#speakerHeard').click();page.evaluate('window.__barrier.utterances=[]');page.locator('#listen').click();expect(page.locator('#mode')).to_have_text('AUDIO LISTENING')
+ page.goto(BASE+'/',wait_until='networkidle');page.locator('summary').click();page.locator('#voiceEngine').select_option('native');page.locator('#consent').check();page.locator('#speak').check();page.locator('#speakerTest').click();page.evaluate('window.__barrier.utterances.at(-1).onend()');page.locator('#speakerHeard').click();page.evaluate('window.__barrier.utterances=[]');page.locator('#listen').click();expect(page.locator('#mode')).to_have_text('AUDIO LISTENING')
  return ctx,page
 try:
  for _ in range(40):
@@ -45,7 +45,7 @@ try:
    with page.expect_download() as d:page.locator('#voiceReport').click()
    dest=OUT/f'premature-{width}.json';d.value.save_as(dest);raw=dest.read_text();r=json.loads(raw)
    assert r['summary']['premature_confirmations_rejected']==1 and r['ledger']['counts']=={} and r['ledger']['hold']=='stale_turn'
-   assert len(r['asset_sha256'])==9 and 'PRIVATE_CSRF_SENTINEL' not in raw and 'PRIVATE_PROVIDER_SENTINEL' not in raw
+   assert len(r['asset_sha256'])==10 and 'audio-readback.mjs' in r['asset_sha256'] and 'PRIVATE_CSRF_SENTINEL' not in raw and 'PRIVATE_PROVIDER_SENTINEL' not in raw
    assert r['privacy']['audio_in_report'] is False;checks.append(f'{width}:download includes held ledger and hashes but no credentials or audio')
    page.screenshot(path=str(OUT/f'held-{width}.png'),full_page=True);ctx.close()
    ctx,page=open_session(browser,width)

@@ -10,10 +10,18 @@ export function conciseReadback(text){
 }
 export const SPEECH_ERRORS = new Set(['canceled','interrupted','audio-busy','audio-hardware','network',
   'synthesis-unavailable','synthesis-failed','language-unavailable','voice-unavailable','text-too-long',
-  'invalid-argument','not-allowed','speech-start-timeout','speech-timeout','speech-unavailable','unknown']);
+  'audio-unavailable','audio-load-failed','audio-integrity','audio-decode-failed','audio-blocked','audio-timeout','audio-plan-failed','audio-playback-failed','invalid-argument','not-allowed','speech-start-timeout','speech-timeout','speech-unavailable','unknown']);
 export function speechErrorCode(value){return SPEECH_ERRORS.has(value)?value:'unknown';}
 export function speechErrorMessage(code){
   const messages={
+    'audio-unavailable':'Audio playback is unavailable in this browser.',
+    'audio-load-failed':'The bundled voice could not load. Check the connection and tap Test speaker again.',
+    'audio-integrity':'A downloaded voice file failed verification. Nothing was played.',
+    'audio-decode-failed':'The browser could not decode the bundled audio.',
+    'audio-blocked':'Audio playback is blocked or paused. Tap Test speaker directly.',
+    'audio-timeout':'Audio playback did not finish in time.',
+    'audio-plan-failed':'The reply cannot safely be represented as bundled audio. Review the screen.',
+    'audio-playback-failed':'Audio playback failed. The microphone remains held.',
     'not-allowed':'The browser blocked spoken audio. Tap Test speaker directly to allow it.',
     'synthesis-unavailable':'This browser has no working speech engine. Voice replies cannot start here.',
     'synthesis-failed':'The device speech engine failed to produce audio.',
