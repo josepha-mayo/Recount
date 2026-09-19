@@ -1,0 +1,104 @@
+name: Deploy Recount speaker preflight
+on:
+  push:
+    branches: [master]
+    paths: [.github/workflows/deploy-speaker-preflight.yml]
+permissions:
+  contents: read
+concurrency:
+  group: recount-production-release
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 04568a402e3b58de84714d7c75933f7d4c4bab90
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Deploy only the tested tracked source
+        env:
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/recount-speaker-release /tmp/recount-speaker-deploy
+          git archive HEAD | tar -x -C /tmp/recount-speaker-release
+          node --input-type=module <<'JS'
+          import{hkdfSync,createDecipheriv}from'node:crypto';import{execFileSync}from'node:child_process';import fs from'node:fs';
+          const e={"meta":{"repository":"josepha-mayo/Recount","site_id":"df8d4f20-8294-4f70-820a-731fa440156b","source_commit":"04568a402e3b58de84714d7c75933f7d4c4bab90","expires_at":"2026-09-19T18:48:15.922473+00:00"},"salt":"520cb5d597deedbb15298dc8ac9604755a6e547e43ed8ecb3261ac8d86ae0eb3","iv":"52a68be3480c0dde4e9ba830","ciphertext":"DJIdnxKys47FKadkWu+NvLfcU2MX/WN4TrXcE95XWHvunyOEkzhxeZ/lLgPDek2P89LmVVXnDtuRt31UnmaiNHgMICEkUzFTgeaNDhMPk54g3zexQkToSNEmHfsbnfjunrL1r6wltDrNWFT+sh79HRTlRAObHIFUsBCLKhjm4ngvOt04TB/Nlsi1sKikuKb6j7uBoydLP3kiWNjgeh8B4h2IFUlyf/bjy0Vswv7t8QoqyPPtJOQHnKJ6/TqyCswsNbU4E/efHcslVfHDQ1xSXgh7VSQEfx5cmsCcQEiyj5qWnbuZGqjbsvGWegOR8/B5H1esaIU31ZagwHM4ziM69S0CTSVHkwjk6Ow4QW6eE9m8wxL/gfZbW5OohDI+0lpz1XqPNVngwuVTgCa7mijMVeZdPx7Z5rN4oPUjTc1eWkix3MMPuJIERuYxu8UsgWJFdyNPFOHm2hZeK0yFCSfDGyXs1X8gO0b2LJCjWL3p2wWn8Qv5LP/3feIeBomgL+6CYylnfWkrQd+YTB20cvFa2HkeGFcoUvmEQ2PTJrcLnRvccbR61Q5/epKYtS16nrZlHB9Q+cj6xlwoeDCBFyi5qkPSKS5WvDHxfxGfFNuFYLPOV1voyTTyDSab8EFf0/jry2cKa8Xhk5Nsa568JJhOjZLCwqNuKSGKr88WdqbMzQ==","tag":"31847b6598977c2db20a0054dca3d1e8"};
+          const secret=process.env.ASSEMBLYAI_API_KEY?.trim();if(!secret||process.env.GITHUB_REPOSITORY!==e.meta.repository||Date.now()>=Date.parse(e.meta.expires_at))throw Error('Deployment authorization missing or expired');
+          if(execFileSync('git',['rev-parse','HEAD']).toString().trim()!==e.meta.source_commit)throw Error('Source mismatch');
+          const k=hkdfSync('sha256',Buffer.from(secret),Buffer.from(e.salt,'hex'),Buffer.from('Recount deploy envelope v1'),32),d=createDecipheriv('aes-256-gcm',k,Buffer.from(e.iv,'hex'));d.setAAD(Buffer.from(JSON.stringify(e.meta)));d.setAuthTag(Buffer.from(e.tag,'hex'));
+          let proxy;try{proxy=Buffer.concat([d.update(Buffer.from(e.ciphertext,'base64')),d.final()]).toString();}catch{throw Error('Could not open authorized deployment capability');}
+          if(!proxy.startsWith('https://netlify-mcp.netlify.app/proxy/')||/\s/.test(proxy))throw Error('Invalid deployment endpoint');
+          console.log('::add-mask::'+proxy);console.log('::add-mask::'+proxy.split('/').at(-1));
+          const env={...process.env,CI:'true',NPM_CONFIG_LOGLEVEL:'error'};delete env.ASSEMBLYAI_API_KEY;delete env.GITHUB_TOKEN;
+          let log='',exit=0;
+          try{log=execFileSync('npx',['-y','@netlify/mcp@latest','--site-id',e.meta.site_id,'--proxy-path',proxy],{cwd:'/tmp/recount-speaker-release',env,timeout:360000,stdio:['ignore','pipe','pipe'],maxBuffer:8e6}).toString();}catch(err){exit=err.status??1;log=String(err.stdout??'')+'\n'+String(err.stderr??'');}
+          log=log.split(proxy).join('[REDACTED]').split(secret).join('[REDACTED]').replace(/https:\/\/netlify-mcp\.netlify\.app\/proxy\/[^\s"'<>]+/g,'[REDACTED]').replace(/\x1b\[[0-9;]*m/g,'');fs.writeFileSync('/tmp/recount-speaker-deploy/deploy.log',log.slice(-20000));console.log(JSON.stringify({helper_exit:exit,source:e.meta.source_commit}));if(exit)process.exitCode=1;
+          JS
+      - name: Verify current served bytes and protected token endpoint
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import urllib.request,urllib.error,hashlib,json,time
+          base='https://recount-voice.netlify.app';root=Path('/tmp/recount-speaker-release/web');rows=[]
+          for attempt in range(6):
+              rows=[]
+              for p in sorted(root.iterdir()):
+                  if not p.is_file():continue
+                  path='/' if p.name=='index.html' else '/'+p.name
+                  try:
+                      data=urllib.request.urlopen(urllib.request.Request(base+path,headers={'Cache-Control':'no-cache'}),timeout=12).read(500000)
+                      rows.append({'asset':p.name,'matches':data==p.read_bytes(),'sha256':hashlib.sha256(data).hexdigest()})
+                  except Exception as e:rows.append({'asset':p.name,'matches':False,'error':type(e).__name__})
+              if all(r['matches'] for r in rows):break
+              time.sleep(4)
+          config=json.load(urllib.request.urlopen(base+'/api/config',timeout=12))
+          req=urllib.request.Request(base+'/api/token',data=b'{"consent":false}',headers={'Content-Type':'application/json','Origin':base})
+          try:
+              with urllib.request.urlopen(req,timeout=12) as r:rejected=r.status
+          except urllib.error.HTTPError as e:rejected=e.code
+          result={'source':'04568a402e3b58de84714d7c75933f7d4c4bab90','site':base,'assets':rows,'voice_configured':config.get('voice_enabled'),'unauthorized_token_status':rejected,'provider_audio_calls':0}
+          Path('/tmp/recount-speaker-deploy/ASSETS.json').write_text(json.dumps(result,indent=2))
+          assert all(r['matches'] for r in rows) and config.get('voice_enabled') and rejected==403
+          print(json.dumps(result))
+          PY
+      - name: Check deployed UI with controlled speech failures without external transcription
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          RECOUNT_SPEAKER_BASE=https://recount-voice.netlify.app RECOUNT_SPEAKER_OUT=/tmp/recount-speaker-deploy/browser python tests/browser_speaker_check.py
+      - name: Observe native headless speaker behavior separately from mocked tests
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          from playwright.sync_api import sync_playwright,expect
+          out=Path('/tmp/recount-speaker-deploy');calls=[]
+          with sync_playwright() as pw:
+              b=pw.chromium.launch(headless=True);c=b.new_context(accept_downloads=True);p=c.new_page()
+              p.on('websocket',lambda s:calls.append(s.url.split('?')[0]))
+              p.route('**/api/token',lambda r:(_ for _ in ()).throw(AssertionError('Unexpected provider request')))
+              p.goto('https://recount-voice.netlify.app/',wait_until='networkidle');p.locator('summary').click()
+              p.locator('#speakerTest').click();p.wait_for_function("!document.querySelector('#speakerTest').disabled",timeout=17000)
+              visible=p.locator('#speakerTestStatus').inner_text();expect(p.locator('#listen')).to_be_disabled()
+              with p.expect_download() as d:p.locator('#voiceReport').click()
+              d.value.save_as(out/'native-headless-report.json');r=json.loads((out/'native-headless-report.json').read_text());assert r['summary']['sessions_requested']==0 and not calls
+              (out/'NATIVE_OUTPUT_OBSERVATION.json').write_text(json.dumps({'environment':'GitHub-hosted headless Chromium, NOT the user device','native_speech_mocked':False,'visible_status':visible,'provider_audio_calls':0,'user_heard_audio':False,'scope':'Observes actual native engine event/error; no physical speaker or human hearing claim.'},indent=2))
+              b.close()
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-speaker-preflight-deployment
+          path: /tmp/recount-speaker-deploy/
+          retention-days: 14
+          if-no-files-found: error
