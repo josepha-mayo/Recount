@@ -25,7 +25,7 @@ A count is not just a transcript. “Twelve, no, thirteen” should update one d
 
 When recognition is uncertain, a usable draft is retained for another confirmation or on-screen review. A standalone correction clears the old number before a following fragment supplies its replacement. Moving to a clearly named next item parks unresolved work in **Needs review** instead of silently saving or losing it. Resuming an old review cannot silently replace a newer confirmed count. Review drafts remain outside the stock CSV.
 
-Spoken read-backs are shorter than the full on-screen explanation. If speech synthesis errors or times out, it is cancelled before the microphone path is held; capture is not reopened while the reply may still be speaking. The client sends vocabulary as one JSON-array query parameter with the observed 160/400 ms development profile. That profile is not claimed optimal.
+Spoken read-backs are shorter than the full on-screen explanation. If speech synthesis errors or times out, it is cancelled before the microphone path is held; capture is not reopened while the reply may still be speaking. The client sends vocabulary as one JSON-array query parameter with the observed 160/640 ms development profile. That profile is not claimed optimal.
 
 ## Human evaluation: not passed
 

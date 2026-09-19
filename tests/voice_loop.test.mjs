@@ -45,4 +45,4 @@ test('wrong-unit read-back remains unsaveable even though the voice loop continu
   const f=setup(),ws=await f.begin();await ws.emit(turn('Rice, 12 cartons.',0,[w('Rice,'),w('12'),w('cartons.')]));assert.equal(f.state.pending,null);assert.match(f.state.reply,/not guess pack conversions/);assert.equal(f.runtime.phase(),'listening');f.runtime.revoke();
 });
 
-test('transactional streaming URL bounds provider turn silence',async()=>{const f=setup(),ws=await f.begin();const u=new URL(ws.url);assert.equal(u.searchParams.get('speech_model'),'universal-3-5-pro');assert.equal(u.searchParams.get('min_turn_silence'),'160');assert.equal(u.searchParams.get('max_turn_silence'),'400');f.runtime.revoke();});
+test('transactional streaming URL bounds provider turn silence',async()=>{const f=setup(),ws=await f.begin();const u=new URL(ws.url);assert.equal(u.searchParams.get('speech_model'),'universal-3-5-pro');assert.equal(u.searchParams.get('min_turn_silence'),'160');assert.equal(u.searchParams.get('max_turn_silence'),'640');f.runtime.revoke();});

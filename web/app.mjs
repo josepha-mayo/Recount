@@ -15,6 +15,13 @@ const readback={cancel(){nativeReadback.cancel();audioReadback.cancel();},
 const speaker=new SpeakerCheck(readback,{onChange:()=>render(),onTrace:event=>audit.add(event)});
 function cancelSpeech(){readback.cancel();}
 function say(text){return $('speak').checked?readback.speak(text):Promise.resolve({status:'disabled'});}
+function providerStatus(){
+  return config?.voice_enabled?(config.requires_access_code?'Judge deployment is provider-ready. Enter the supplied access code, permit test audio, then start voice mode. Real synthetic-provider validation passed; human voice validation has not passed; this recovery revision is experimental.':'Provider configured. Real AssemblyAI synthetic-audio validation passed. During a live session, Recount mutes capture while speaking each local read-back, then resumes listening; human voice validation has not passed; this recovery revision is experimental.'):'Voice mode is intentionally disabled on this deployment until its server-side AssemblyAI key is configured. Text/review mode still works.';
+}
+async function refreshConfig(){
+  const r=await fetch('/api/config',{cache:'no-store'});if(!r.ok)throw Error('Configuration unavailable');
+  config=await r.json();$('providerStatus').textContent=providerStatus();render();return config;
+}
 function speak(){if(!voice.active()&&state.history.at(-1)?.source==='assemblyai')void say(state.reply).catch(e=>error(e));}
 function render(){
   viewRevision=state.revision;$('reply').textContent=state.reply;const p=state.pending,locked=voice.active()||speaker.busy();
@@ -93,7 +100,7 @@ $('load').onchange=async()=>{try{
 $('listen').onclick=async()=>{try{
   if(voice.active()){cancelSpeech();return voice.stop();}
   if($('speak').checked&&!speaker.ready())throw Error('Tap Test speaker, then confirm you heard it before starting voice mode.');
-  cancelSpeech();const runtimeConfig={...config};
+  cancelSpeech();const runtimeConfig={...(await refreshConfig())};
   if(config?.requires_access_code){
     const code=$('accessCode').value.trim();
     if(code.length<8||code.length>128)throw Error('Enter the judge access code before starting voice mode.');
@@ -108,7 +115,5 @@ $('speak').onchange=()=>{speaker.reset();render();};
 $('voiceEngine').onchange=()=>{speaker.reset();render();};
 $('consent').onchange=()=>{if(!$('consent').checked){cancelSpeech();voice.revoke();}render();};
 window.addEventListener('pagehide',()=>{cancelSpeech();voice.revoke();});
-render();try{
-  const r=await fetch('/api/config',{cache:'no-store'});if(!r.ok)throw Error('Configuration unavailable');config=await r.json();
-  $('providerStatus').textContent=config.voice_enabled?(config.requires_access_code?'Judge deployment is provider-ready. Enter the supplied access code, permit test audio, then start voice mode. Real synthetic-provider validation passed; human voice validation has not passed; this recovery revision is experimental.':'Provider configured. Real AssemblyAI synthetic-audio validation passed. During a live session, Recount mutes capture while speaking each local read-back, then resumes listening; human voice validation has not passed; this recovery revision is experimental.'):'Voice mode is intentionally disabled on this deployment until its server-side AssemblyAI key is configured. Text/review mode still works.';render();
+render();try{await refreshConfig();
 }catch{error('Open the app through its local server or verified deployment, not by double-clicking this file.');}

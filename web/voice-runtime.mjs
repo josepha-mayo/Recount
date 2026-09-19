@@ -15,6 +15,7 @@ export class VoiceRuntime {
     this.current=null;this.generation=0;
   }
   trace(event,details={}){try{this.onTrace({event,revision:this.getRevision(),...details});}catch{ /* Diagnostics cannot change the count path. */ }}
+  setup(v,stage,details={}){v.setupStage=stage;this.trace('setup_stage',{stage,...details});}
   active(){return this.current!==null;}
   phase(){return this.current?.prompting?'prompting':this.current?.gate.phase??'idle';}
   live(v){return this.current===v&&!v.finished;}
@@ -23,7 +24,7 @@ export class VoiceRuntime {
   stopPrompt(v){if(v?.prompting){v.promptGeneration++;v.prompting=false;try{this.cancelPrompt();}catch{}this.trace('readback_cancelled');}}
   finish(v){
     if(v.finished)return;v.finished=true;this.stopPrompt(v);
-    for(const name of ['handshake','duration','drain','flush'])this.clear(v,name);
+    for(const name of ['handshake','duration','drain','flush','socketError'])this.clear(v,name);
     v.stream?.getTracks().forEach(t=>t.stop());v.input?.disconnect();v.node?.disconnect();
     try{v.ws?.close();}catch{}
     try{Promise.resolve(v.ctx?.close()).catch(()=>{});}catch{}
@@ -60,16 +61,21 @@ export class VoiceRuntime {
       onHold:this.onHold,onPartial:this.onPartial,onPhase:p=>this.onState(p)});
     this.onState('connecting');this.timer(v,'handshake',20000,()=>this.fail(v,'stream_lost'));
     try{
+      this.setup(v,'microphone_request');
       const stream=await this.d.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true}});
-      if(!this.live(v)){stream.getTracks().forEach(t=>t.stop());return false;}v.stream=stream;
-      v.ctx=new this.d.AudioContext({sampleRate:16000});await v.ctx.audioWorklet.addModule('/audio-worklet.js');
+      if(!this.live(v)){stream.getTracks().forEach(t=>t.stop());return false;}v.stream=stream;this.setup(v,'microphone_ready');
+      v.ctx=new this.d.AudioContext({sampleRate:16000});this.setup(v,'audio_context_ready',{sampleRate:v.ctx.sampleRate});
+      await v.ctx.audioWorklet.addModule('/audio-worklet.js');this.setup(v,'worklet_ready');
       if(!this.live(v))return false;
+      this.setup(v,'token_request');
       const res=await this.d.fetch('/api/token',{method:'POST',headers:{'Content-Type':'application/json','X-Recount-Token':config.csrf},body:JSON.stringify(tokenBody)});
-      const data=await res.json();
+      const data=await res.json();this.setup(v,'token_response',{httpStatus:res.status});
       if(!this.live(v))return false;
       if(!res.ok||typeof data.token!=='string'||!Number.isFinite(data.max_session_duration_seconds))throw Error(data?.error||'Provider token unavailable');
+      this.setup(v,'token_ready');
       const url=streamingURL({sampleRate:v.ctx.sampleRate,speechModel:data.speech_model,token:data.token});
-      v.ws=new this.d.WebSocket(url);
+      v.ws=new this.d.WebSocket(url);this.setup(v,'socket_created');
+      v.ws.onopen=()=>{if(this.live(v))this.trace('socket_open');};
       v.ws.onmessage=async e=>{
         if(!this.live(v))return;
         try{
@@ -121,11 +127,16 @@ export class VoiceRuntime {
           }
         }catch{this.onError('Streaming data could not be verified. Review the held count.');this.fail(v,'invalid_event');}
       };
-      v.ws.onerror=()=>{if(this.live(v)){this.onError('Connection failed. The count remains unconfirmed.');this.fail(v,'stream_lost');}};
-      v.ws.onclose=()=>{if(this.live(v)){v.gate.transportClosed();this.finish(v);}};
+      v.ws.onerror=()=>{if(this.live(v)){this.trace('socket_error');try{v.input?.disconnect();}catch{}this.onError('Connection failed. The count remains unconfirmed.');this.timer(v,'socketError',750,()=>this.fail(v,'stream_lost'));}};
+      v.ws.onclose=e=>{if(this.live(v)){this.clear(v,'socketError');this.trace('socket_closed',{closeCode:e?.code,wasClean:e?.wasClean});v.gate.transportClosed();this.finish(v);}};
       return true;
     }catch(e){
-      if(this.live(v)){this.onError(e?.message==='Invalid judge access code.'?e.message:'Microphone or provider setup failed. No successful transcription is claimed.');this.fail(v,'stream_lost');}
+      if(this.live(v)){
+        this.trace('setup_failed',{stage:v.setupStage??'unknown',errorName:e?.name});
+        const known=new Set(['Invalid judge access code.','Refresh the page before starting voice mode.','Provider token service is temporarily unavailable.','Provider token service rejected the request.','Voice mode is not configured on this deployment.']);
+        const message=known.has(e?.message)?e.message:`Microphone or provider setup failed during ${String(v.setupStage??'startup').replaceAll('_',' ')}. No successful transcription is claimed.`;
+        this.onError(message);this.fail(v,'stream_lost');
+      }
       return false;
     }
   }

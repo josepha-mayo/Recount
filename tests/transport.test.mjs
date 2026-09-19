@@ -4,7 +4,7 @@ import {VoiceRuntime} from '../web/voice-runtime.mjs';import {initial,reduce,rea
 const config={voice_enabled:true,csrf:'fixture-csrf'};
 const final=(text='rice twelve bags',order=0)=>({type:'Turn',turn_order:order,end_of_turn:true,transcript:text,words:[{confidence:.99}]});
 function setup({delayedMedia=false}={}){
-  let state=initial(),fetches=0,resolveMedia;const sockets=[],nodes=[],contexts=[],phases=[],holds=[],timers=new Map();let seq=0;
+  let state=initial(),fetches=0,resolveMedia;const sockets=[],nodes=[],contexts=[],phases=[],holds=[],traces=[],timers=new Map();let seq=0;
   const track={stops:0,stop(){this.stops++;}};const stream={getTracks:()=>[track]};
   class Socket{
     static OPEN=1;constructor(url){this.url=url;this.readyState=1;this.bufferedAmount=0;this.sent=[];sockets.push(this);}
@@ -24,12 +24,25 @@ function setup({delayedMedia=false}={}){
     fetch:async()=>{fetches++;return {ok:true,json:async()=>({token:'temporary-fixture',max_session_duration_seconds:120,speech_model:'universal-3-5-pro'})};},
     setTimeout:(fn,ms)=>{const id=++seq;timers.set(id,{fn,ms});return id;},clearTimeout:id=>timers.delete(id)};
   const runtime=new VoiceRuntime({getRevision:()=>state.revision,onTurn:a=>{state=reduce(state,a);},
-    onHold:reason=>{holds.push(reason);state=reduce(state,{kind:'hold',reason,revision:state.revision});},onState:p=>phases.push(p),deps});
-  return {runtime,track,sockets,nodes,contexts,holds,phases,timers,get state(){return state;},get fetches(){return fetches;},
+    onHold:reason=>{holds.push(reason);state=reduce(state,{kind:'hold',reason,revision:state.revision});},onState:p=>phases.push(p),onTrace:e=>traces.push(e),deps});
+  return {runtime,track,sockets,nodes,contexts,holds,phases,traces,timers,get state(){return state;},get fetches(){return fetches;},
     grantMedia(){resolveMedia(stream);},fire(ms){const t=[...timers.values()].find(t=>t.ms===ms);assert.ok(t,`timer ${ms}`);t.fn();},
     async begin(){await runtime.start(config,true);await sockets[0].emit({type:'Begin',id:'fixture-session'});return sockets[0];}};
 }
 test('no consent means no microphone and no provider-token attempt',async()=>{const f=setup();await assert.rejects(()=>f.runtime.start(config,false));assert.equal(f.fetches,0);assert.equal(f.runtime.active(),false);});
+test('startup diagnostics identify the last successful stage without exposing the token',async()=>{
+  const f=setup();await f.runtime.start(config,true);
+  const stages=f.traces.filter(e=>e.event==='setup_stage').map(e=>e.stage);
+  assert.deepEqual(stages,['microphone_request','microphone_ready','audio_context_ready','worklet_ready','token_request','token_response','token_ready','socket_created']);
+  assert.equal(JSON.stringify(f.traces).includes('temporary-fixture'),false);f.runtime.revoke();
+});
+test('socket failure waits briefly for the close code so diagnostics keep the provider reason class',async()=>{
+  const f=setup();await f.runtime.start(config,true);const ws=f.sockets[0];ws.onerror();
+  assert.equal(f.runtime.active(),true);ws.onclose({code:1008,wasClean:false});
+  assert.equal(f.runtime.active(),false);assert.equal(f.state.hold,'stream_lost');
+  assert.ok(f.traces.some(e=>e.event==='socket_error'));
+  assert.ok(f.traces.some(e=>e.event==='socket_closed'&&e.closeCode===1008&&e.wasClean===false));
+});
 test('graceful stop sends buffered audio before Terminate and accepts trailing final',async()=>{
   const f=setup(),ws=await f.begin();await ws.emit({type:'Turn',turn_order:0,end_of_turn:false,transcript:'rice twelve'});
   f.runtime.stop();assert.equal(f.runtime.phase(),'draining');assert.ok(f.track.stops);assert.equal(ws.sent.length,0);
