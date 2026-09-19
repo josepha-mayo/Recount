@@ -1,0 +1,37 @@
+name: Recount speaker preflight
+on:
+  push:
+    branches: [master]
+    paths: ['web/**','tests/browser_speaker_check.py','tests/speaker_check.test.mjs','server.py','.github/workflows/speaker-preflight-ci.yml']
+  pull_request:
+    paths: ['web/**','tests/browser_speaker_check.py','tests/speaker_check.test.mjs','server.py','.github/workflows/speaker-preflight-ci.yml']
+permissions:
+  contents: read
+jobs:
+  speaker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      ALLOW_ASSEMBLYAI: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: node --test tests/speaker_check.test.mjs
+      - run: |
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          RECOUNT_SPEAKER_OUT=/tmp/recount-speaker python tests/browser_speaker_check.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-speaker-preflight
+          path: /tmp/recount-speaker/
+          retention-days: 14
+          if-no-files-found: error
