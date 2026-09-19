@@ -1,0 +1,64 @@
+{
+  "schema": "recount-speaker-preflight-release-1",
+  "date": "2026-09-19",
+  "status": "DEPLOYED_USER_DEVICE_AUDIO_NOT_YET_CONFIRMED",
+  "source_commit": "04568a402e3b58de84714d7c75933f7d4c4bab90",
+  "pull_request": 7,
+  "site": "https://recount-voice.netlify.app/",
+  "netlify_deploy_id": "6aaed49764d39655332785ea",
+  "netlify_state": "ready",
+  "supplied_session_review": {
+    "source_type": "recount-session-2 action history, not a speech-engine interaction report",
+    "recognized_turns": 3,
+    "audio_gap_holds": 3,
+    "saved_records": 0,
+    "native_speech_error_available": false,
+    "finding": "The first complete count was recognized, then held. The file cannot identify the browser/device cause of silence."
+  },
+  "reproduced_application_defects": [
+    "A synthetic native synthesis-unavailable error on the baseline lost its code and became only Read-back audio failed.",
+    "Runtime speech-error text was shown before the hold action, whose render cleared it."
+  ],
+  "changes": [
+    "Test speaker starts a real native speech request synchronously inside the user's click, before microphone permission or AssemblyAI token requests.",
+    "Explicit I heard it and No sound controls separate engine completion from the user's hearing acknowledgement.",
+    "Spoken voice mode cannot start until the user confirms hearing the speaker test; deliberate silent review remains available.",
+    "Available English voice is selected, language/volume/pitch are initialized, the utterance is retained and paused synthesis is resumed.",
+    "Allowlisted native speech error codes and separate start/end timeouts are preserved in the UI and private report.",
+    "Download voice report works after a failed speaker test with no microphone or provider session."
+  ],
+  "verification": {
+    "integration_run": 35461058975,
+    "integration_artifact": 10588958979,
+    "integration_artifact_sha256": "56e12b460bd9781c42717013bb7c4a7e69acf9e6c3e98f9b636d3041c7fe7f00",
+    "node_tests": 182,
+    "http_tests": 8,
+    "inherited_browser_checks": 32,
+    "recovery_checks": 13,
+    "readback_ordering_checks": 12,
+    "setup_checks": 12,
+    "new_speaker_browser_checks": 22,
+    "pull_request_runs": [35461201129,35461201182,35461201219],
+    "deployment_run": 35461346065,
+    "deployment_artifact": 10588884296,
+    "deployment_artifact_sha256": "2583e947e75dd2c8a9c232f4373eb3e86f05906dd875c58f826cd5adc4eff30d",
+    "matching_public_assets": 11,
+    "public_assets_total": 11,
+    "deployed_UI_checks_with_mocked_speech": 22,
+    "unauthorized_token_status": 403,
+    "native_headless_speech_observation": "A separate real native-engine test reported synthesis-failed and correctly prevented microphone/provider startup. This was GitHub-hosted headless Chromium, not the user's device and not a successful audible playback test."
+  },
+  "unchanged": {
+    "count_ledger_and_confidence_policy": true,
+    "previous_human_results": true,
+    "provider_credentials_and_allowed_origin": true,
+    "new_AssemblyAI_audio_calls": 0,
+    "private_audio_or_session_published": false
+  },
+  "next_user_action": "Refresh the app, expand Live AssemblyAI voice path and tap Test speaker only. No access code or microphone is needed for this step. Confirm hearing it or report the displayed speech error; do not repeat the stock script while sound is absent.",
+  "documentation_basis": [
+    "https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesis/getVoices",
+    "https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesisUtterance/voice",
+    "https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesisErrorEvent/error"
+  ]
+}
