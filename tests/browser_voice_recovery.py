@@ -63,7 +63,7 @@ try:
   emit(page,'Confirm 12.',5);expect(page.locator('#rows')).to_contain_text('12');expect(page.locator('#rows tr')).to_have_count(1);checks.append('new clear quantity echo completes corrected count')
   emit(page,'Confirm 12.',5);expect(page.locator('#rows tr')).to_have_count(1);checks.append('duplicate final cannot create second save')
   q=page.evaluate("Object.fromEntries(new URL(window.__fixture.sockets[0].url).searchParams)")
-  assert q['min_turn_silence']=='160' and q['max_turn_silence']=='400' and isinstance(json.loads(q['keyterms_prompt']),list);checks.append('actual browser request uses JSON vocabulary and selected development timing')
+  assert q['min_turn_silence']=='160' and q['max_turn_silence']=='640' and isinstance(json.loads(q['keyterms_prompt']),list);checks.append('actual browser request uses JSON vocabulary and selected development timing')
   page.locator('#listen').click();expect(page.locator('#mode')).to_have_text('TEXT / REVIEW MODE')
   assert page.evaluate('window.__fixture.stream.getTracks().every(t=>t.readyState===\'ended\')');checks.append('normal stop waits for finalization and ends generated capture tracks')
   with page.expect_download() as d:page.locator('#csv').click()
