@@ -58,7 +58,7 @@ export class VoiceAudit {
     }
     const safe=redactForExport({schema:'recount-session-2',revision:state.revision,counts:state.counts,pending:state.pending,review:state.review,hold:state.hold,history:state.history},secrets);
     return {
-      schema:'recount-interaction-report-1',client_revision:'bundled-neural-audio-20260919',site,
+      schema:'recount-interaction-report-1',client_revision:'bundled-neural-audio-startup-diagnostics-20260919',site,
       classification:'Client-collected interaction evidence; no automatic pass, human-speaker, physical-count or ASR-accuracy claim.',
       privacy:{audio_recorded:false,audio_in_report:false,configured_credentials_included:false,known_credential_redactions:safe.redactions,review_before_sharing:true,contains_transcript_text:true,upload_performed:false},
       events:structuredClone(this.events),events_dropped:this.dropped,asset_sha256:hashes,
