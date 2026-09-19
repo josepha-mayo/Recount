@@ -1,0 +1,33 @@
+{
+  "schema": "recount-readback-barrier-verification-1",
+  "date": "2026-09-19",
+  "status": "SOFTWARE_VERIFIED_NOT_HUMAN_VALIDATED",
+  "tested_source_commit": "c9c6827e098bbbc0c0536e163e00557c1508876a",
+  "baseline_source": "b82c262cd962415721c5654541ec5c82bc49223b",
+  "baseline_reproduction": "With an authored Rice 12 draft, a new Confirm 12 final arriving before the deferred read-back completed saved Rice 12. The negative regression failed on the unmodified baseline and passed on the candidate.",
+  "changes": [
+    "A new confirmation final delivered during read-back cannot commit; the pending count is held for review.",
+    "A newer correction cancels and supersedes the old spoken reply. A stale completion or rejection callback cannot reopen capture or cancel the newer reply.",
+    "Unavailable spoken read-back is not treated as completed speech. Deliberately disabled speech retains the visual-review path.",
+    "The app can export a private interaction report with local event timings, action history, counts, holds and served-asset hashes. It contains transcript text but no recorded audio, configured access code or provider credentials. Export itself uploads nothing."
+  ],
+  "ci": {
+    "run_id": 35437124045,
+    "artifact_id": 10582981109,
+    "artifact_sha256": "f7041eefbaf0dae1be248dd11a42cd3c146f2d207136f9d7217fdc3ead4d6d5f",
+    "node_tests": 159,
+    "http_tests": 8,
+    "existing_browser_checks": 32,
+    "voice_recovery_browser_checks": 13,
+    "readback_barrier_browser_checks": 12,
+    "status": "passed",
+    "scope": "Actual tracked source and Chromium/app/worklet/downloads, using generated silence and mocked provider/speech callbacks. Not a physical-microphone, live ASR or human evaluation."
+  },
+  "privacy": {"new_provider_audio_requests":0,"private_recordings_uploaded":0,"transcripts_published":false},
+  "unchanged": ["count parser", "confidence floors", "existing failed human results", "provider credentials", "other projects"],
+  "limits": [
+    "This guards delivery-time ordering while a read-back is pending; it does not prove that the human actually listened or acoustically timestamp all speech.",
+    "Report asset hashes identify bytes served at export time, not a cryptographic attestation of the code that executed earlier.",
+    "Two previous human recording replays remain failed. A genuine interactive microphone/read-back/retry session is still required before claiming human task success."
+  ]
+}

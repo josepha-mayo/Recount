@@ -1,0 +1,82 @@
+name: Recount interaction guard integration
+on:
+  push:
+    branches: [fix/readback-barrier-20260919]
+    paths: [.github/workflows/apply-interaction-guard.yml]
+permissions:
+  contents: write
+concurrency:
+  group: recount-interaction-integration
+  cancel-in-progress: false
+jobs:
+  integrate:
+    if: github.repository == 'josepha-mayo/Recount'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ALLOW_ASSEMBLYAI: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Preserve failing baseline reproduction and apply byte-checked patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/recount-guard-evidence
+          set +e
+          node --test --test-name-pattern='a new confirmation cannot commit' tests/readback_barrier.test.mjs > /tmp/recount-guard-evidence/baseline-failure.log 2>&1
+          baseline=$?
+          set -e
+          test "$baseline" -ne 0
+          grep -q 'quantity: 12' /tmp/recount-guard-evidence/baseline-failure.log
+          python maintenance/apply_readback_barrier.py
+          # Workflow changes are published separately through the connector, not
+          # pushed using the runner token. This job directly executes all suites.
+          git restore .github/workflows/ci.yml
+          git add web/voice-runtime.mjs web/app.mjs web/index.html server.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Guard asynchronous read-back completion and add private voice-report control'
+          mkdir -p /tmp/recount-guard-source
+          git archive HEAD | tar -x -C /tmp/recount-guard-source
+          git rev-parse HEAD > /tmp/recount-guard-evidence/SOURCE_COMMIT.txt
+      - name: Run all inherited and new checks on tracked source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/recount-guard-source
+          node --test tests/*.test.mjs | tee /tmp/recount-guard-evidence/node.log
+          python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee /tmp/recount-guard-evidence/http.log
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          python tests/browser.py > /tmp/recount-guard-evidence/browser.log
+          cp verification/browser.json /tmp/recount-guard-evidence/browser.json
+          RECOUNT_VOICE_TEST_OUT=/tmp/recount-guard-evidence/recovery python tests/browser_voice_recovery.py > /tmp/recount-guard-evidence/recovery.log
+          RECOUNT_BARRIER_OUT=/tmp/recount-guard-evidence/barrier python tests/browser_readback_barrier.py > /tmp/recount-guard-evidence/barrier.log
+          python - <<'PY'
+          import json,re
+          from pathlib import Path
+          p=Path('/tmp/recount-guard-evidence');n=(p/'node.log').read_text();h=(p/'http.log').read_text()
+          b=json.loads((p/'browser.json').read_text());v=json.loads((p/'recovery/RECEIPT.json').read_text());g=json.loads((p/'barrier/RECEIPT.json').read_text())
+          assert '# fail 0' in n and re.search(r'^OK$',h,re.M) and all(x['status']=='passed' for x in [b,v,g])
+          r={'status':'passed','source_commit':(p/'SOURCE_COMMIT.txt').read_text().strip(),'node_tests':int(re.search(r'# tests (\d+)',n)[1]),'http_tests':int(re.search(r'Ran (\d+) tests',h)[1]),'browser_checks':b['check_count'],'voice_recovery_checks':v['check_count'],'readback_barrier_checks':g['check_count'],'provider_audio_requests':0,'human_speaker_cases':0,'scope':'Tracked source, actual Chromium/worklet/controls with generated silence and mocked ASR/TTS. Not a human or provider recognition test.'}
+          (p/'RECEIPT.json').write_text(json.dumps(r,indent=2));print(json.dumps(r))
+          PY
+      - name: Publish tested runtime changes to this branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/fix/readback-barrier-20260919
+          git push origin HEAD:refs/heads/fix/readback-barrier-20260919
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-interaction-guard-evidence
+          path: /tmp/recount-guard-evidence/
+          retention-days: 14
+          if-no-files-found: error
