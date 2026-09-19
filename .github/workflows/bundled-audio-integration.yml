@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/recount-bundled-evidence
-          python scripts/apply_bundled_voice.py
+          python scripts/prepare_audio_integration.py
           python - <<'PY'
           import json,hashlib
           from pathlib import Path
@@ -50,12 +50,12 @@ jobs:
           python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee /tmp/recount-bundled-evidence/http.log
           python -m pip install -r requirements-dev.txt
           python -m playwright install --with-deps chromium
-          python tests/browser.py > /tmp/recount-bundled-evidence/browser.log
-          RECOUNT_RECOVERY_OUT=/tmp/recount-bundled-evidence/recovery python tests/browser_voice_recovery.py > /tmp/recount-bundled-evidence/recovery.log
-          RECOUNT_BARRIER_OUT=/tmp/recount-bundled-evidence/barrier python tests/browser_readback_barrier.py > /tmp/recount-bundled-evidence/barrier.log
-          RECOUNT_SPEAKER_OUT=/tmp/recount-bundled-evidence/native-compat python tests/browser_speaker_check.py > /tmp/recount-bundled-evidence/native-compat.log
-          python tests/browser_voice_setup.py > /tmp/recount-bundled-evidence/setup.log
-          RECOUNT_AUDIO_OUT=/tmp/recount-bundled-evidence/real-audio python tests/browser_bundled_audio.py | tee /tmp/recount-bundled-evidence/real-audio.log
+          python tests/browser.py 2>&1 | tee /tmp/recount-bundled-evidence/browser.log
+          RECOUNT_RECOVERY_OUT=/tmp/recount-bundled-evidence/recovery python tests/browser_voice_recovery.py 2>&1 | tee /tmp/recount-bundled-evidence/recovery.log
+          RECOUNT_BARRIER_OUT=/tmp/recount-bundled-evidence/barrier python tests/browser_readback_barrier.py 2>&1 | tee /tmp/recount-bundled-evidence/barrier.log
+          RECOUNT_SPEAKER_OUT=/tmp/recount-bundled-evidence/native-compat python tests/browser_speaker_check.py 2>&1 | tee /tmp/recount-bundled-evidence/native-compat.log
+          python tests/browser_voice_setup.py 2>&1 | tee /tmp/recount-bundled-evidence/setup.log
+          RECOUNT_AUDIO_OUT=/tmp/recount-bundled-evidence/real-audio python tests/browser_bundled_audio.py 2>&1 | tee /tmp/recount-bundled-evidence/real-audio.log
       - name: Publish only the tested integration
         shell: bash
         run: |
