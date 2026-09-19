@@ -1,0 +1,37 @@
+name: Recount read-back barrier
+on:
+  push:
+    branches: [master]
+    paths: ['web/**', 'tests/browser_readback_barrier.py', 'tests/readback_barrier.test.mjs', 'tests/voice_audit.test.mjs', 'server.py', '.github/workflows/readback-barrier-ci.yml']
+  pull_request:
+    paths: ['web/**', 'tests/browser_readback_barrier.py', 'tests/readback_barrier.test.mjs', 'tests/voice_audit.test.mjs', 'server.py', '.github/workflows/readback-barrier-ci.yml']
+permissions:
+  contents: read
+jobs:
+  barrier:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      ALLOW_ASSEMBLYAI: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: node --test tests/readback_barrier.test.mjs tests/voice_audit.test.mjs
+      - run: |
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          RECOUNT_BARRIER_OUT=/tmp/recount-barrier python tests/browser_readback_barrier.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-readback-barrier
+          path: /tmp/recount-barrier/
+          retention-days: 14
+          if-no-files-found: error
