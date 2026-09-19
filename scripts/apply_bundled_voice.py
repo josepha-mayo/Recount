@@ -67,9 +67,9 @@ def server(s):
 """
  return replace(s,needle,inject+needle)
 edit('server.py',server)
-# Retain every existing native-speech assertion, now explicitly in compatibility mode.
-# The new primary-backend suite exercises decoded MP3 audio with native synthesis disabled.
+# Select the compatibility backend only AFTER its settings panel is opened.
+# Preserve all inherited native-speech assertions; primary audio gets its own real-decoding suite.
 for path,var in [('tests/browser_speaker_check.py','p'),('tests/browser_readback_barrier.py','page'),('tests/browser_voice_recovery.py','page')]:
- edit(path,lambda s,var=var:replace(s,f"{var}.goto(BASE+'/',wait_until='networkidle');",f"{var}.goto(BASE+'/',wait_until='networkidle');{var}.locator('#voiceEngine').select_option('native');"))
+ edit(path,lambda s,var=var:replace(s,f"{var}.locator('summary').click();",f"{var}.locator('summary').click();{var}.locator('#voiceEngine').select_option('native');"))
 for path,text in changed.items():(R/path).write_text(text)
 print('Applied',len(changed),'byte-checked changes; ledger and runtime remain untouched')
