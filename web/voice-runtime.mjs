@@ -127,7 +127,7 @@ export class VoiceRuntime {
           }
         }catch{this.onError('Streaming data could not be verified. Review the held count.');this.fail(v,'invalid_event');}
       };
-      v.ws.onerror=()=>{if(this.live(v)){this.trace('socket_error');this.onError('Connection failed. The count remains unconfirmed.');this.timer(v,'socketError',750,()=>this.fail(v,'stream_lost'));}};
+      v.ws.onerror=()=>{if(this.live(v)){this.trace('socket_error');try{v.input?.disconnect();}catch{}this.onError('Connection failed. The count remains unconfirmed.');this.timer(v,'socketError',750,()=>this.fail(v,'stream_lost'));}};
       v.ws.onclose=e=>{if(this.live(v)){this.clear(v,'socketError');this.trace('socket_closed',{closeCode:e?.code,wasClean:e?.wasClean});v.gate.transportClosed();this.finish(v);}};
       return true;
     }catch(e){
