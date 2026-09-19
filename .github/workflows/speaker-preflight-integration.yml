@@ -1,0 +1,66 @@
+name: Recount speaker preflight integration
+on:
+  push:
+    branches: [fix/speaker-preflight-20260919]
+    paths: [.github/workflows/speaker-preflight-integration.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      ALLOW_ASSEMBLYAI: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Preserve baseline error-code loss before applying patch
+        shell: bash
+        run: |
+          mkdir -p /tmp/recount-speaker-evidence
+          node --input-type=module <<'JS' > /tmp/recount-speaker-evidence/baseline-error-loss.json
+          import {ReadbackPlayer} from './web/readback.mjs';
+          let utterance; const player=new ReadbackPlayer({synth:{cancel(){},speak(u){utterance=u;}},Utterance:class{}});
+          const p=player.speak('Test speaker');utterance.onerror({error:'synthesis-unavailable'});
+          try{await p;throw Error('Expected failure');}catch(e){if(e.code)throw Error('Baseline unexpectedly retained the native code');console.log(JSON.stringify({reproduced:true,native_error:'synthesis-unavailable',retained_code:e.code??null,visible_message:e.message,scope:'Injected native event, not the user device.'}));}
+          JS
+      - name: Apply exact scoped changes and test the staged tracked tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          python delivery/apply_speaker_preflight.py
+          git add web server.py tests
+          tree=$(git write-tree)
+          mkdir /tmp/recount-speaker-checkout
+          git archive "$tree" | tar -x -C /tmp/recount-speaker-checkout
+          cd /tmp/recount-speaker-checkout
+          node --test tests/*.test.mjs | tee /tmp/recount-speaker-evidence/node.log
+          python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee /tmp/recount-speaker-evidence/http.log
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          python tests/browser.py | tee /tmp/recount-speaker-evidence/browser.log
+          RECOUNT_VOICE_OUT=/tmp/recount-speaker-evidence/recovery python tests/browser_voice_recovery.py | tee /tmp/recount-speaker-evidence/recovery.log
+          RECOUNT_BARRIER_OUT=/tmp/recount-speaker-evidence/barrier python tests/browser_readback_barrier.py | tee /tmp/recount-speaker-evidence/barrier.log
+          RECOUNT_SETUP_OUT=/tmp/recount-speaker-evidence/setup python tests/browser_voice_setup.py | tee /tmp/recount-speaker-evidence/setup.log
+          RECOUNT_SPEAKER_OUT=/tmp/recount-speaker-evidence/speaker python tests/browser_speaker_check.py | tee /tmp/recount-speaker-evidence/speaker.log
+          cp verification/browser.json /tmp/recount-speaker-evidence/browser.json
+      - name: Publish only tested runtime changes to the work branch
+        run: |
+          git config user.name 'josepha-mayo'
+          git config user.email '192471872+josepha-mayo@users.noreply.github.com'
+          git commit -m 'Check audible speaker output before capture and retain native speech failures'
+          git push origin HEAD:fix/speaker-preflight-20260919
+          git rev-parse HEAD > /tmp/recount-speaker-evidence/SOURCE_COMMIT.txt
+          git archive --format=zip --prefix=Recount/ HEAD > /tmp/recount-speaker-evidence/Recount-Tested-Source.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-speaker-preflight-evidence
+          path: /tmp/recount-speaker-evidence/
+          retention-days: 14
+          if-no-files-found: error
