@@ -1,0 +1,128 @@
+name: Deploy Recount read-back barrier
+on:
+  push:
+    branches: [master]
+    paths: ['.github/workflows/deploy-readback-barrier.yml']
+permissions:
+  contents: read
+concurrency:
+  group: recount-production-release
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d700646ffcb1d293639a1984dbb8573a8c6aa499
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Prepare exact tested tracked source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = d700646ffcb1d293639a1984dbb8573a8c6aa499
+          mkdir -p /tmp/recount-guard-release /tmp/recount-deploy-receipt
+          git archive HEAD | tar -x -C /tmp/recount-guard-release
+      - name: Authorized independent-site deployment
+        env:
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'JS'
+          import {hkdfSync,createDecipheriv} from 'node:crypto';
+          import {execFileSync} from 'node:child_process';
+          import fs from 'node:fs';
+          const envelope={"meta":{"repository":"josepha-mayo/Recount","site_id":"df8d4f20-8294-4f70-820a-731fa440156b","source_commit":"d700646ffcb1d293639a1984dbb8573a8c6aa499","expires_at":"2026-09-19T10:52:40.513715+00:00"},"salt":"18860161a2b230ca01bd0d88d03613c64c69cdbb9c269948cd97d79eca9f80f2","iv":"b6e8522169a2b5fc91810030","ciphertext":"8bEOa/DCONzOVP60XtpM3ZXYIBwvR8hcTOGY1WbGF0ZU1sLodG62wiXLEvppAsk96yK3AnD5S/Br3cZ0J7ddBMYkRPPsfIzs71pf2y0shjXdzI9EH6J9RtPIh2XDbJfpjlqSx7R/41fAmZGi+kyvC0ha0gx4ZUm/Mly3tGefALHkQBJKen2pQ2x14E00NyDe0NEeoVw6hKuScZ3geyaiTVWp6C++cEzwzeaPCM94Xc9uytXSHf3ynnlNmtPnFLL9BChLNh8xhx+1q4UuukqH1otn0+dkUDM83Ue1kv8DsCas2RNUyRVKjo7O/IRSo726OCCEgyv/PYwbKj6DVe3lm3AscAwfuFwQQk2bcVEym1JkQde5O4PVWl3XYHD7h1mBhkMH75l1aCSWuoVTFtRzLbC18RUIAY+TOu9wgNx5bMR6C5fSs0n1TIw1JNieUWeR/ZfoK8b3ZSjWHkB4Vi6bz7yTPvd9ZYXeCnLW7IMhZcQzikyNm3bCnJCbHSP9HWAUvoee53TzFuD/0HY/uu8IPFwoi+FilLfwWTNpoc/CVULGtkw0mVH1U27pHqqOUUe4LQgTzcOv33aM6Xk03fmBaDORYl33QR5dLNuymcOOlReimc+Ek/qJ9jySTlobjxj6ybRIsP6e5jFF0VkogMCBlAbxWR6W/88ZXo5GfDYBoQ==","tag":"bdbf145fc1d9509e4a93fdbd4f2ffaf6"};
+          const m=envelope.meta,secret=process.env.ASSEMBLYAI_API_KEY?.trim();
+          if(process.env.GITHUB_REPOSITORY!==m.repository||m.site_id!=='df8d4f20-8294-4f70-820a-731fa440156b'||Date.now()>=Date.parse(m.expires_at)||!secret)throw Error('Deployment authorization unavailable or expired');
+          const key=hkdfSync('sha256',Buffer.from(secret),Buffer.from(envelope.salt,'hex'),Buffer.from('Recount deploy envelope v1'),32);
+          const d=createDecipheriv('aes-256-gcm',key,Buffer.from(envelope.iv,'hex'));d.setAAD(Buffer.from(JSON.stringify(m)));d.setAuthTag(Buffer.from(envelope.tag,'hex'));
+          let proxy;
+          try{proxy=Buffer.concat([d.update(Buffer.from(envelope.ciphertext,'base64')),d.final()]).toString();}catch{throw Error('Deployment capability could not be opened');}
+          if(!proxy.startsWith('https://netlify-mcp.netlify.app/proxy/')||/\s/.test(proxy))throw Error('Unexpected deployment endpoint');
+          console.log('::add-mask::'+proxy);console.log('::add-mask::'+proxy.split('/').at(-1));
+          const env={...process.env,CI:'true',NPM_CONFIG_LOGLEVEL:'error'};delete env.ASSEMBLYAI_API_KEY;delete env.GITHUB_TOKEN;
+          let output='',exit=0;
+          try{output=execFileSync('npx',['-y','@netlify/mcp@latest','--site-id',m.site_id,'--proxy-path',proxy],{cwd:'/tmp/recount-guard-release',env,timeout:360000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']}).toString();}
+          catch(e){exit=e.status??1;output=String(e.stdout??'')+'\n'+String(e.stderr??'');}
+          output=output.split(proxy).join('[REDACTED_CAPABILITY]').split(secret).join('[REDACTED]').replace(/https:\/\/netlify-mcp\.netlify\.app\/proxy\/[^\s"'<>]+/g,'[REDACTED_CAPABILITY]').replace(/\x1b\[[0-9;]*m/g,'');
+          fs.writeFileSync('/tmp/recount-deploy-receipt/deploy-helper.log',output.slice(-24000));
+          fs.writeFileSync('/tmp/recount-deploy-receipt/UPLOAD.json',JSON.stringify({site_id:m.site_id,source_commit:m.source_commit,helper_exit:exit,provider_requests:0,private_audio_uploaded:false},null,2));
+          console.log(JSON.stringify({deployment_helper_exit:exit,source_commit:m.source_commit,site_id:m.site_id}));
+          if(exit)process.exitCode=1;
+          JS
+      - name: Verify exact public assets and token access boundary
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib,json,time,urllib.request,urllib.error
+          from pathlib import Path
+          origin='https://recount-voice-joseph.netlify.app';out=Path('/tmp/recount-deploy-receipt')
+          names=sorted(p.name for p in Path('/tmp/recount-guard-release/web').iterdir() if p.is_file())
+          rows=[]
+          for attempt in range(6):
+              rows=[]
+              for name in names:
+                  local=Path('/tmp/recount-guard-release/web',name).read_bytes();path='/' if name=='index.html' else '/'+name
+                  try:
+                      req=urllib.request.Request(origin+path,headers={'Cache-Control':'no-cache'})
+                      with urllib.request.urlopen(req,timeout=12) as r:data=r.read(400000);status=r.status
+                      rows.append({'asset':name,'http_status':status,'sha256':hashlib.sha256(local).hexdigest(),'live_sha256':hashlib.sha256(data).hexdigest(),'matches':data==local})
+                  except Exception as e:rows.append({'asset':name,'error':type(e).__name__,'matches':False})
+              if all(r['matches'] for r in rows):break
+              time.sleep(5)
+          with urllib.request.urlopen(origin+'/api/config',timeout=12) as r:config=json.load(r)
+          req=urllib.request.Request(origin+'/api/token',data=b'{"consent":false}',headers={'Origin':origin,'Content-Type':'application/json'},method='POST')
+          try:
+              with urllib.request.urlopen(req,timeout=12) as r:rejected=r.status
+          except urllib.error.HTTPError as e:rejected=e.code
+          report={'source_commit':'d700646ffcb1d293639a1984dbb8573a8c6aa499','origin':origin,'assets':rows,'all_assets_match':all(r['matches'] for r in rows),'voice_configured':config.get('voice_enabled'),'requires_access_code':config.get('requires_access_code'),'unauthorized_token_status':rejected,'provider_requests':0,'private_audio_uploaded':False}
+          (out/'LIVE_ASSET_RECEIPT.json').write_text(json.dumps(report,indent=2))
+          assert report['all_assets_match'] and report['voice_configured'] and report['requires_access_code'] and rejected in [400,403], 'Live verification failed'
+          print(json.dumps(report))
+          PY
+      - name: Verify the real public report control and corrected-count workflow
+        shell: bash
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from playwright.sync_api import sync_playwright,expect
+          origin='https://recount-voice-joseph.netlify.app';out=Path('/tmp/recount-deploy-receipt');checks=[];errors=[];requests=[]
+          with sync_playwright() as pw:
+              browser=pw.chromium.launch(headless=True)
+              for width,height in [(1360,1000),(390,844)]:
+                  context=browser.new_context(viewport={'width':width,'height':height},accept_downloads=True)
+                  page=context.new_page();page.on('pageerror',lambda e:errors.append(str(e)))
+                  page.on('websocket',lambda s:requests.append(s.url.split('?')[0]))
+                  page.goto(origin+'/',wait_until='networkidle');page.locator('summary').click()
+                  expect(page.locator('#voiceReport')).to_be_visible();expect(page.locator('#voiceReport')).to_be_disabled();checks.append(f'{width}:public report button present and disabled before a session')
+                  expect(page.locator('#accessWrap')).to_be_visible();expect(page.locator('#listen')).to_be_disabled();checks.append(f'{width}:voice remains access and consent gated')
+                  for text in ['rice twelve bags','no','thirteen bags','confirm twelve']:
+                      page.locator('#utterance').fill(text);page.locator('#textForm button').click()
+                  expect(page.locator('#rows tr')).to_have_count(0);checks.append(f'{width}:wrong echo does not save')
+                  page.locator('#utterance').fill('confirm thirteen');page.locator('#textForm button').click()
+                  expect(page.locator('#rows tr')).to_have_count(1);expect(page.locator('#rows')).to_contain_text('13');checks.append(f'{width}:corrected explicit echo saves exactly one count')
+                  with page.expect_download() as event:page.locator('#csv').click()
+                  event.value.save_as(out/f'public-stock-{width}.csv');assert (out/f'public-stock-{width}.csv').read_text()=='item,quantity,unit\nRice,13,bags\n';checks.append(f'{width}:downloaded CSV contains exactly the confirmed record')
+                  expect(page.locator('#voiceReport')).to_be_disabled();assert page.evaluate('document.documentElement.scrollWidth<=innerWidth');assert not errors
+                  checks.append(f'{width}:typed activity is not mislabelled voice evidence and no horizontal overflow')
+                  page.screenshot(path=str(out/f'public-{width}.png'),full_page=True);context.close()
+              browser.close()
+          assert not requests and not errors
+          r={'status':'passed','check_count':len(checks),'checks':checks,'provider_audio_requests':0,'microphone_used':False,'scope':'Actual deployed controls and downloads with authored text inputs. Not a human voice or ASR test.'}
+          (out/'PUBLIC_BROWSER_RECEIPT.json').write_text(json.dumps(r,indent=2));print(json.dumps(r))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-readback-barrier-deployment
+          path: /tmp/recount-deploy-receipt/
+          retention-days: 14
+          if-no-files-found: error
