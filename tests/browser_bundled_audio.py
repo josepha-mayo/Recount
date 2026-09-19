@@ -22,7 +22,7 @@ FIXTURE=r'''(()=>{
  Object.defineProperty(window,'speechSynthesis',{value:{getVoices(){return [];},cancel(){},speak(){f.nativeCalls++;throw Error('Native synthesis deliberately disabled');}}});
  setInterval(()=>{for(const a of f.analyzers){try{const x=new Float32Array(a.fftSize);a.getFloatTimeDomainData(x);const rms=Math.sqrt(x.reduce((n,v)=>n+v*v,0)/x.length);f.maxRms=Math.max(f.maxRms,rms);}catch{}}},15);
  navigator.mediaDevices.getUserMedia=async()=>{f.microphoneCalls++;const c=new Real();await c.resume();return c.createMediaStreamDestination().stream;};
- class Socket{static OPEN=1;constructor(){this.readyState=1;this.bufferedAmount=0;f.sockets.push(this);setTimeout(()=>this.emit({type:'Begin',id:'audio-playback-browser'}),0);}emit(m){return this.onmessage?.({data:JSON.stringify(m)});}send(x){if(typeof x==='string'&&JSON.parse(x).type==='Terminate')setTimeout(()=>this.emit({type:'Termination'}),0);}close(){this.readyState=3;}}
+ class Socket{static OPEN=1;constructor(){this.readyState=1;this.bufferedAmount=0;f.sockets.push(this);setTimeout(()=>this.emit({type:'Begin',id:'audio-playback-browser'}),0);}emit(m){void this.onmessage?.({data:JSON.stringify(m)});}send(x){if(typeof x==='string'&&JSON.parse(x).type==='Terminate')setTimeout(()=>this.emit({type:'Termination'}),0);}close(){this.readyState=3;}}
  Object.defineProperty(window,'WebSocket',{value:Socket});
 })();'''
 checks=[];errors=[];token_attempts=[];signals=[]
@@ -61,7 +61,6 @@ try:
    assert any(e.get('playback_backend')=='bundled-neural-audio' for e in report['events']);checks.append(f'{width}:download identifies actual chosen audio backend')
    assert p.evaluate('document.documentElement.scrollWidth<=innerWidth');assert not errors;p.screenshot(path=str(OUT/f'audio-{width}.png'),full_page=True);checks.append(f'{width}:layout and JavaScript remain valid')
    c.close()
-  # A missing clip blocks setup before microphone access and preserves the error.
   c=browser.new_context(accept_downloads=True);c.add_init_script(FIXTURE);routes(c)
   c.route('**/voice/v1/speaker-test.mp3',lambda q:q.fulfill(status=404,body='missing'))
   p=c.new_page();p.goto(BASE+'/',wait_until='networkidle');p.locator('summary').click();p.locator('#speakerTest').click()
