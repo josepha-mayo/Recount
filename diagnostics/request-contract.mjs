@@ -5,10 +5,10 @@ export function buildStreamingURL(token, config) {
   if (typeof token !== 'string' || token.length < 10 || token.length > 4096)
     throw new Error('Invalid temporary token');
   if (config.speech_model !== 'universal-3-5-pro') throw new Error('Unexpected speech model');
-  for (const key of ['min_turn_silence', 'max_turn_silence']) {
-    if (!Number.isInteger(config[key]) || config[key] < 50 || config[key] > 10000)
-      throw new Error(`Invalid ${key}`);
-  }
+  if (!Number.isInteger(config.min_turn_silence) || config.min_turn_silence < 50 || config.min_turn_silence > 500)
+    throw new Error('Invalid min_turn_silence');
+  if (!Number.isInteger(config.max_turn_silence) || config.max_turn_silence < 500 || config.max_turn_silence > 5000)
+    throw new Error('Invalid max_turn_silence');
   if (config.max_turn_silence < config.min_turn_silence) throw new Error('Inverted silence bounds');
   const q = new URLSearchParams({sample_rate: '16000', encoding: 'pcm_s16le',
     speech_model: config.speech_model, token,
