@@ -1,0 +1,59 @@
+name: Recount voice setup integration
+on:
+  push:
+    branches: [fix/clear-voice-setup-20260919]
+    paths: ['.github/workflows/voice-setup-integration.yml']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    env:
+      ALLOW_ASSEMBLYAI: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/clear-voice-setup-20260919
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply checked changes and test the staged Git tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          python maintenance/apply_voice_setup.py
+          git add web/app.mjs web/index.html web/voice-audit.mjs README.md SUBMISSION_DRAFT.md .env.example
+          tree=$(git write-tree)
+          mkdir -p /tmp/recount-setup-source /tmp/recount-setup-evidence
+          git archive "$tree" | tar -x -C /tmp/recount-setup-source
+          cp /tmp/voice-setup-patch.json /tmp/recount-setup-evidence/
+          cd /tmp/recount-setup-source
+          node --test tests/*.test.mjs | tee /tmp/recount-setup-evidence/node.log
+          python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee /tmp/recount-setup-evidence/http.log
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          python tests/browser.py > /tmp/recount-setup-evidence/browser.log
+          RECOUNT_BARRIER_OUT=/tmp/recount-setup-evidence/barrier python tests/browser_readback_barrier.py > /tmp/recount-setup-evidence/barrier.log
+          RECOUNT_SETUP_OUT=/tmp/recount-setup-evidence/setup python tests/browser_voice_setup.py > /tmp/recount-setup-evidence/setup.log
+          cp verification/browser.json /tmp/recount-setup-evidence/browser.json
+      - name: Commit only tested source on the working branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Expose spoken reply mode and prevent access codes entering exported count history'
+          git push origin HEAD:fix/clear-voice-setup-20260919
+          git rev-parse HEAD > /tmp/recount-setup-evidence/SOURCE_COMMIT.txt
+          git archive HEAD --format=zip --prefix=Recount/ > /tmp/recount-setup-evidence/Recount-Tested-Source.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-voice-setup-evidence
+          path: /tmp/recount-setup-evidence/
+          retention-days: 14
+          if-no-files-found: error
