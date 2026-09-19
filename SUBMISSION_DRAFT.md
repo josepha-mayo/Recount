@@ -6,7 +6,7 @@
 
 - Team: https://lablab.ai/ai-hackathons/assemblyai-voice-agent-hackathon/recount
 - Source: https://github.com/josepha-mayo/Recount
-- Application: https://recount-voice-joseph.netlify.app/
+- Application: https://recount-voice.netlify.app/
 - Deployed-release receipt: [verification/INTERACTIVE_RECOVERY_RELEASE_20260918.json](verification/INTERACTIVE_RECOVERY_RELEASE_20260918.json)
 - New public screenshot and narration build: https://github.com/josepha-mayo/Recount/actions/runs/35388255349
 

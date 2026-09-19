@@ -1,14 +1,14 @@
 import {CATALOG,initial,reduce,replay,ready,exportCSV} from './core.mjs';
 import {VoiceRuntime} from './voice-runtime.mjs';
 import {ReadbackPlayer} from './readback.mjs';
-import {VoiceAudit} from './voice-audit.mjs';
+import {VoiceAudit,redactForExport,hasCredentialText} from './voice-audit.mjs';
 const audit=new VoiceAudit();
 const $=id=>document.getElementById(id);let state=initial(),config=null,viewRevision=0;
 function error(e){$('error').textContent=e?.message??String(e);}
 const readback=new ReadbackPlayer();
 function cancelSpeech(){readback.cancel();}
 function say(text){return $('speak').checked?readback.speak(text):Promise.resolve({status:'disabled'});}
-function speak(){if(!voice.active())void say(state.reply).catch(e=>error(e));}
+function speak(){if(!voice.active()&&state.history.at(-1)?.source==='assemblyai')void say(state.reply).catch(e=>error(e));}
 function render(){
   viewRevision=state.revision;$('reply').textContent=state.reply;const p=state.pending,locked=voice.active();
   $('draft').textContent=p?`${CATALOG[p.sku].label} / ${p.quantity??'?'} ${p.unit??'unit?'}`:'No count waiting';
@@ -39,6 +39,8 @@ function render(){
   $('listen').disabled=phase==='draining'||(!locked&&(!config?.voice_enabled||!$('consent').checked));
   $('accessWrap').hidden=!config?.requires_access_code;
   $('accessCode').disabled=locked||!config?.requires_access_code;
+  $('speak').disabled=locked;
+  $('voiceSetupStatus').textContent=$('speak').checked?'Voice replies ON. Wait for the reply to finish before speaking again.':'SILENT REVIEW MODE: no spoken replies. Read the on-screen response before continuing.';
 }
 function act(a){
   $('error').textContent='';state=reduce(state,{...a,revision:a.revision??state.revision});render();speak();
@@ -47,7 +49,14 @@ function userAction(a){try{if(voice.active())throw Error('Stop the voice session
 const voice=new VoiceRuntime({getRevision:()=>state.revision,onTurn:act,
   onHold:reason=>act({kind:'hold',reason}),onPartial:text=>{$('partial').textContent=text;},
   onState:()=>render(),onError:error,promptReply:()=>say(state.reply),cancelPrompt:cancelSpeech,onTrace:event=>audit.add(event)});
-function typed(text){userAction({kind:'turn',id:crypto.randomUUID(),text,source:'typed',confidence:1,final:true});}
+function typed(text){
+  if(hasCredentialText(text,[$('accessCode').value.trim()])){
+    $('voiceSetup').open=true;
+    if(/^recount-[A-Za-z0-9_-]{12,128}$/.test(text.trim()))$('accessCode').value=text.trim();
+    $('accessCode').focus();error('Access code detected. Use the Judge access code field, not the stock transcript. Nothing was added to the count history.');return;
+  }
+  userAction({kind:'turn',id:crypto.randomUUID(),text,source:'typed',confidence:1,final:true});
+}
 $('textForm').onsubmit=e=>{e.preventDefault();typed($('utterance').value);$('utterance').value='';};
 for(const b of document.querySelectorAll('[data-example]'))b.onclick=()=>typed(b.dataset.example);
 $('confirm').onclick=()=>userAction({kind:'confirm'});$('discard').onclick=()=>userAction({kind:'discard'});
@@ -61,9 +70,9 @@ $('voiceReport').onclick=async()=>{try{
     try{const r=await fetch('/'+name,{cache:'no-store'});if(!r.ok)continue;const digest=await crypto.subtle.digest('SHA-256',await r.arrayBuffer());hashes[name]=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');}catch{}
   }
   if(voice.active()||state.revision!==revision)throw Error('The session changed during export. Finish it and try again.');
-  download('Recount-Interaction-Report.json',JSON.stringify(audit.snapshot(state,{origin:location.origin,assetHashes:hashes}),null,2),'application/json');
+  download('Recount-Interaction-Report.json',JSON.stringify(audit.snapshot(state,{origin:location.origin,assetHashes:hashes,secrets:[$('accessCode').value.trim()]}),null,2),'application/json');
 }catch(e){error(e);}};
-$('session').onclick=()=>{if(voice.active())return error('Finish the voice session before saving.');download('recount-session.json',JSON.stringify({schema:'recount-session-2',history:state.history},null,2),'application/json');};
+$('session').onclick=()=>{if(voice.active())return error('Finish the voice session before saving.');if(redactForExport(state.history,[$('accessCode').value.trim()]).redactions)return error('This session contains an access code in its transcript. Use the redacted voice report instead; the original history was not altered.');download('recount-session.json',JSON.stringify({schema:'recount-session-2',history:state.history},null,2),'application/json');};
 $('load').onchange=async()=>{try{
   if(voice.active())throw Error('Finish the voice session before opening a session.');
   const f=$('load').files[0];if(!f)return;if(f.size>1_000_000)throw Error('Session exceeds 1 MB');
@@ -82,6 +91,7 @@ $('listen').onclick=async()=>{try{
   audit.add({event:'capture_options',spokenReadback:$('speak').checked});
   await voice.start(runtimeConfig,$('consent').checked);
 }catch(e){error(e);}};
+$('speak').onchange=()=>{cancelSpeech();render();};
 $('consent').onchange=()=>{if(!$('consent').checked){cancelSpeech();voice.revoke();}render();};
 window.addEventListener('pagehide',()=>{cancelSpeech();voice.revoke();});
 render();try{

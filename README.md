@@ -4,7 +4,7 @@
 
 Correction-aware voice stocktaking by Joseph Ayanda for the AssemblyAI Voice Agent Hackathon.
 
-- Application: https://recount-voice-joseph.netlify.app/
+- Application: https://recount-voice.netlify.app/
 - Source: https://github.com/josepha-mayo/Recount
 - Team: https://lablab.ai/ai-hackathons/assemblyai-voice-agent-hackathon/recount
 - Current release receipt: [verification/INTERACTIVE_RECOVERY_RELEASE_20260918.json](verification/INTERACTIVE_RECOVERY_RELEASE_20260918.json)
@@ -64,7 +64,7 @@ Netlify publishes `web` and bundles `netlify/functions`. Store configuration onl
 ASSEMBLYAI_API_KEY
 RECOUNT_SIGNING_SECRET
 RECOUNT_DEMO_PASS
-RECOUNT_ALLOWED_ORIGIN=https://recount-voice-joseph.netlify.app
+RECOUNT_ALLOWED_ORIGIN=https://recount-voice.netlify.app
 ```
 
 The permanent provider key stays server-side. Voice access requires the private judge code, explicit audio consent, a same-origin request, CSRF validation and a short-lived streaming token. Hosted sessions are capped at 90 seconds. The shared code is not individual-user authentication or a global billing limit. Never put it in public descriptions, recordings or source.
