@@ -1,0 +1,53 @@
+{
+  "schema": "recount-interaction-guard-release-1",
+  "date": "2026-09-19",
+  "status": "DEPLOYED_SOFTWARE_VERIFIED_HUMAN_INTERACTION_PENDING",
+  "source_commit": "d700646ffcb1d293639a1984dbb8573a8c6aa499",
+  "pull_request": 5,
+  "site": "https://recount-voice-joseph.netlify.app/",
+  "netlify_deploy_id": "6aae63f7563b5125fa213f26",
+  "netlify_state": "ready",
+  "runtime_changes": [
+    "New confirmation finals received during unfinished spoken read-back are held instead of committed.",
+    "Corrections supersede the old spoken reply; stale completion or rejection callbacks cannot reopen capture or cancel the newer reply.",
+    "Unavailable or cancelled speech is not counted as completed read-back; deliberately disabled speech retains visual review.",
+    "Download voice report exports local interaction events and action history without recording audio or including configured credentials. Reports contain transcript text and are shared only by the user."
+  ],
+  "verification": {
+    "baseline_defect_reproduced": true,
+    "baseline_log_preserved": true,
+    "integration_run": 35437124045,
+    "integration_artifact": 10582981109,
+    "integration_artifact_sha256": "f7041eefbaf0dae1be248dd11a42cd3c146f2d207136f9d7217fdc3ead4d6d5f",
+    "node_tests": 159,
+    "http_checks": 8,
+    "standard_browser_checks": 32,
+    "recovery_browser_checks": 13,
+    "readback_barrier_browser_checks": 12,
+    "pull_request_regression_run": 35437283831,
+    "pull_request_barrier_run": 35437283877,
+    "deploy_run": 35437508998,
+    "deploy_artifact": 10583120834,
+    "deploy_artifact_sha256": "2bcc2717c73e78f3472ba3f344e5e615b81a52f2fb62f539599de6ec41afdfe8",
+    "deployed_assets_matched": 10,
+    "deployed_assets_total": 10,
+    "public_browser_checks": 12,
+    "public_browser_status": "passed",
+    "unauthorized_token_status": 403,
+    "voice_configured": true,
+    "public_mobile_screenshot_inspected": true
+  },
+  "evidence_limits": {
+    "browser_voice_input": "Generated silence with authored provider and SpeechSynthesis callbacks, not real human speech recognition.",
+    "public_site_checks": "Actual deployed controls and CSV bytes using typed inputs; no microphone or provider WebSocket.",
+    "new_provider_audio_requests": 0,
+    "new_human_recordings": 0,
+    "private_audio_uploaded": false,
+    "parser_or_confidence_floors_changed": false,
+    "previous_human_holdouts": "Both remain NOT_A_CLEAN_PASS. No new human task result is claimed.",
+    "report_asset_hashes": "Identify source bytes served at export time, not a cryptographic attestation of earlier execution."
+  },
+  "next_gate": "One actual phone-browser interaction: stage a count, hear the reply, correct it, hear the new reply, speak the matching confirmation, stop and export Recount-Interaction-Report.json. Keep any failures and distinguish voice completion from local button actions. This is a development interaction check, not a third independent holdout.",
+  "submission": "Not submitted; neither platform status nor human validation was changed by deployment.",
+  "user_setup": "Existing independent site and runtime variables retained. No new ZIP runner, API key or account setup needed. Existing judge code is provided privately, not in this public receipt."
+}
