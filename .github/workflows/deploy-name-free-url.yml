@@ -1,0 +1,104 @@
+name: Deploy name-free Recount URL
+on:
+  push:
+    branches: [master]
+    paths: ['.github/workflows/deploy-name-free-url.yml']
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d9773a1d06c9b3daee1681a461e7985f3367fb5e
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Upload the exact tested source to the existing renamed project
+        env:
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/recount-name-free-source /tmp/recount-name-free-receipt
+          git archive HEAD | tar -x -C /tmp/recount-name-free-source
+          node --input-type=module <<'JS'
+          import {hkdfSync,createDecipheriv} from 'node:crypto';
+          import {execFileSync} from 'node:child_process';
+          import fs from 'node:fs';
+          const e={"meta":{"repository":"josepha-mayo/Recount","site_id":"df8d4f20-8294-4f70-820a-731fa440156b","source_commit":"d9773a1d06c9b3daee1681a461e7985f3367fb5e","expires_at":"2026-09-19T18:21:27.810261+00:00"},"salt":"43bb74e24899f31d5606335aa082d17010d1f7659905123737b97d0f0b086d66","iv":"1de2b5929d5c768d40c695e2","ciphertext":"Mcgvy+ObpBGxQNx2+5+2Kdql7yPR4F+OSuxtMKsuaFMFL+TgDaeX1y+rL7nbJPI7O8qtjPn63YUtAGyx2hcYas+ERP9kqustOicmnUSPOF43tfcIr/ags8zUiOVRrkdSRJKjPrtan4dH7uuOvTX1TzHB+saNQ6hok+x0e+UaYcUsk2HyxEIMv/kQYO/mJEFULuDTCvzNVLcppqHPuZIf6TO3PZLssqmWvIOdF6WYkC4uI4mVOeymimoIDHSSWcF/LAP4UoQvDEotAgDooLe4qXjQMaatj6XNf7g3OPv8zA5jV0agolKBOZ8ojha2Vh0CjVGmAjj1t58QVDvxwpnvp5IfcvNhQBNQWcE2uobOLLNkdXludzJwFIQQh7uwc7LST+ahLHUdUZE/6gVt2Vdijf+Flj1zn93ezWsKm8CXuyoEfkOUEiX/6bdO+IYsxadzqfRMLrVO0FfeJ7DIZygPKXpXfI+LJmIaBeJQ8ZMXJwIWvQD53TEna213MyrmgbazyG/f+sgEApQLLNbMWfIGHarpP1QCxAtDTzfHxQWlWPt7A1witfmO2YzwTh7Bkg+G7yU/oOW5594rzKkQyv0phebFZVPb8tJIcFqcu3dh2/n40mK3qp71CZOW9Gl1q3zISl3+/SSy7TtWODTNLYfWMYRYy54dRakTr/rSqYhJmw==","tag":"e66c493debce09dd3ad052578cfe912f"};
+          const secret=process.env.ASSEMBLYAI_API_KEY?.trim(),m=e.meta;
+          if(!secret||process.env.GITHUB_REPOSITORY!==m.repository||Date.now()>=Date.parse(m.expires_at))throw Error('Deployment authorization unavailable or expired');
+          const key=hkdfSync('sha256',Buffer.from(secret),Buffer.from(e.salt,'hex'),Buffer.from('Recount deploy envelope v1'),32);
+          const d=createDecipheriv('aes-256-gcm',key,Buffer.from(e.iv,'hex'));d.setAAD(Buffer.from(JSON.stringify(m)));d.setAuthTag(Buffer.from(e.tag,'hex'));
+          const proxy=Buffer.concat([d.update(Buffer.from(e.ciphertext,'base64')),d.final()]).toString();
+          if(!proxy.startsWith('https://netlify-mcp.netlify.app/proxy/'))throw Error('Unexpected endpoint');
+          console.log('::add-mask::'+proxy);console.log('::add-mask::'+proxy.split('/').at(-1));
+          const env={...process.env,CI:'true',NPM_CONFIG_LOGLEVEL:'error'};delete env.ASSEMBLYAI_API_KEY;delete env.GITHUB_TOKEN;
+          let output='',exit=0;
+          try{output=execFileSync('npx',['-y','@netlify/mcp@latest','--site-id',m.site_id,'--proxy-path',proxy],{cwd:'/tmp/recount-name-free-source',env,timeout:300000,maxBuffer:8000000,stdio:['ignore','pipe','pipe']}).toString();}catch(x){exit=x.status??1;output=String(x.stdout??'')+'\n'+String(x.stderr??'');}
+          output=output.split(proxy).join('[REDACTED]').split(secret).join('[REDACTED]').replace(/https:\/\/netlify-mcp\.netlify\.app\/proxy\/[^\s"'<>]+/g,'[REDACTED]').replace(/\x1b\[[0-9;]*m/g,'');
+          fs.writeFileSync('/tmp/recount-name-free-receipt/deploy.log',output.slice(-16000));
+          if(exit)throw Error('Deployment helper failed; see sanitized log');
+          JS
+      - name: Check current assets and origin guard without provider calls
+        run: |
+          python - <<'PY'
+          import json,hashlib,time,urllib.request,urllib.error
+          from pathlib import Path
+          origin='https://recount-voice.netlify.app';rows=[]
+          for attempt in range(5):
+              rows=[]
+              for p in sorted(Path('web').iterdir()):
+                  if not p.is_file():continue
+                  path='/' if p.name=='index.html' else '/'+p.name
+                  with urllib.request.urlopen(origin+path,timeout=15) as r:data=r.read()
+                  rows.append({'asset':p.name,'matches':data==p.read_bytes(),'sha256':hashlib.sha256(data).hexdigest()})
+              if all(x['matches'] for x in rows):break
+              time.sleep(4)
+          with urllib.request.urlopen(origin+'/api/config',timeout=15) as r:c=json.load(r)
+          origin_checks=[]
+          for supplied in [origin,'https://not-this-site.example']:
+              req=urllib.request.Request(origin+'/api/token',data=b'{"consent":false}',headers={'Origin':supplied,'Content-Type':'application/json'},method='POST')
+              try:
+                  with urllib.request.urlopen(req,timeout=15) as r:status=r.status;body=json.load(r)
+              except urllib.error.HTTPError as e:status=e.code;body=json.load(e)
+              origin_checks.append({'origin':supplied,'status':status,'error':body.get('error')})
+          assert origin_checks[0]['status']==403 and origin_checks[0]['error']=='Refresh the page before starting voice mode.'
+          assert origin_checks[1]['status']==403 and origin_checks[1]['error']=='Same-origin request required.'
+          result={'status':'passed','site':origin,'source_commit':'d9773a1d06c9b3daee1681a461e7985f3367fb5e','assets':rows,'asset_matches':sum(x['matches'] for x in rows),'voice_configured':c.get('voice_enabled'),'requires_access_code':c.get('requires_access_code'),'origin_checks':origin_checks,'provider_audio_requests':0,'new_human_validation':False}
+          assert all(x['matches'] for x in rows) and result['voice_configured'] and result['requires_access_code']
+          Path('/tmp/recount-name-free-receipt/RECEIPT.json').write_text(json.dumps(result,indent=2));print(json.dumps(result))
+          PY
+      - name: Check visible voice settings on the real renamed site
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from playwright.sync_api import sync_playwright,expect
+          checks=[];errors=[];sockets=[]
+          with sync_playwright() as pw:
+              b=pw.chromium.launch(headless=True)
+              for width,height in [(1360,1000),(390,844)]:
+                  p=b.new_page(viewport={'width':width,'height':height});p.on('pageerror',lambda e:errors.append(str(e)));p.on('websocket',lambda w:sockets.append(w.url.split('?')[0]))
+                  p.goto('https://recount-voice.netlify.app/',wait_until='networkidle');p.locator('summary').click()
+                  expect(p.locator('#voiceSetup #speak')).to_be_checked();expect(p.locator('#voiceSetupStatus')).to_contain_text('Voice replies ON');checks.append(f'{width}:default spoken reply mode visible')
+                  p.locator('#speak').uncheck();expect(p.locator('#voiceSetupStatus')).to_contain_text('SILENT REVIEW MODE');checks.append(f'{width}:silent choice clearly signalled')
+                  p.locator('#speak').check();expect(p.locator('#accessWrap')).to_be_visible();expect(p.locator('#listen')).to_be_disabled();checks.append(f'{width}:consent and access controls retained')
+                  assert p.evaluate('document.documentElement.scrollWidth<=innerWidth');assert not errors and not sockets;checks.append(f'{width}:layout and script checks passed without microphone')
+                  p.screenshot(path=f'/tmp/recount-name-free-receipt/public-{width}.png',full_page=True);p.close()
+              b.close()
+          Path('/tmp/recount-name-free-receipt/BROWSER.json').write_text(json.dumps({'status':'passed','checks':checks,'count':len(checks),'provider_audio_calls':0},indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-name-free-release
+          path: /tmp/recount-name-free-receipt/
+          retention-days: 14
+          if-no-files-found: error
