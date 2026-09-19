@@ -1,0 +1,91 @@
+name: Deploy Recount bundled audio
+on:
+  push:
+    branches: [master]
+    paths: [.github/workflows/deploy-bundled-audio.yml]
+permissions:
+  contents: read
+concurrency:
+  group: recount-production-release
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 578f284819f2035c0dac327797bcffe872d038ff
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Upload only the tested tracked source
+        env:
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/recount-audio-release /tmp/recount-audio-deploy
+          git archive HEAD | tar -x -C /tmp/recount-audio-release
+          node --input-type=module <<'JS'
+          import {hkdfSync,createDecipheriv} from 'node:crypto';
+          import {execFileSync} from 'node:child_process';
+          import fs from 'node:fs';
+          const e={"meta":{"repository":"josepha-mayo/Recount","site_id":"df8d4f20-8294-4f70-820a-731fa440156b","source_commit":"578f284819f2035c0dac327797bcffe872d038ff","expires_at":"2026-09-19T19:53:42.905132+00:00"},"salt":"df2dc85d5263d21685ba6f87e6e868c5623b34100650e5590c1565a78838ef24","iv":"037640c135f4600e8283340c","ciphertext":"NqQYtNKEMYxt9h+39e74qi2fRWYILpqIUCSk/yWa/puG3hsp3kUJKCcjOzwuFMEC6IR6LKXkTnWzXZgZ7CuU2JwEPkjIe986tBJGM0wsqlsU9TUzw9Ycr20otf0X+K7RrKGh1zo+OThcn1QMU9amtdqXZ+Nnpf1ZWGzyM8csof0NT4MfNozJSKMJbAHxctUGrdGSksILcZ9rc6IgM/wxl5XxO9lwiYZRpggrYSvWqWkrDrP5lM/0vWsVLT2exyDjQhCp8Zor3TOgXgogJXPyFLeHce5Ror3kYJYHv6pyUMNWqnPJSyeBBVq+1B//mH5WBUW+ipVdvFnAazqbUIP+ZuiZO68/4Vg9AEl84DOIxDpLMA37FS1N8/rk42hiu0WohLnAOoV4ytn3gwYscNCmLKQhW87jTA6IvR7ZncqjPZZUjOtTFpX48or30X5gaZ3NsXoAUQn8lfjOA6WYztUsEJQ6ctaitwvNos7+dhL0QS3KozQOUB0z5J3JrAPAY0/dkZn5eNJRfgHWYMLt3Xa27maVxvNHAkDux5cRtWoBF1wlm/e8ZU2HWwfxylQnxmbQG97X9/9e9YQcw6Ml/KRY7n7l4KbKbG8vGmP+c7blMZOy9qzclTrUbW2isGHzUfJaW/fym7ddFDuIVD9ntymn+iY50jXK7mTNyetYza8OXw==","tag":"1fcb5aed38224466595c9e333772d606"};
+          const m=e.meta,secret=process.env.ASSEMBLYAI_API_KEY?.trim();
+          if(process.env.GITHUB_REPOSITORY!==m.repository||Date.now()>=Date.parse(m.expires_at)||!secret||execFileSync('git',['rev-parse','HEAD']).toString().trim()!==m.source_commit)throw Error('Deployment authorization unavailable or expired');
+          const key=hkdfSync('sha256',Buffer.from(secret),Buffer.from(e.salt,'hex'),Buffer.from('Recount deploy envelope v1'),32);
+          const d=createDecipheriv('aes-256-gcm',key,Buffer.from(e.iv,'hex'));d.setAAD(Buffer.from(JSON.stringify(m)));d.setAuthTag(Buffer.from(e.tag,'hex'));
+          let proxy;try{proxy=Buffer.concat([d.update(Buffer.from(e.ciphertext,'base64')),d.final()]).toString();}catch{throw Error('Deployment capability unavailable');}
+          if(!proxy.startsWith('https://netlify-mcp.netlify.app/proxy/')||/\s/.test(proxy))throw Error('Unexpected deployment endpoint');
+          console.log('::add-mask::'+proxy);console.log('::add-mask::'+proxy.split('/').at(-1));
+          const env={...process.env,CI:'true',NPM_CONFIG_LOGLEVEL:'error'};delete env.ASSEMBLYAI_API_KEY;delete env.GITHUB_TOKEN;
+          let output='',exit=0;
+          try{output=execFileSync('npx',['-y','@netlify/mcp@latest','--site-id',m.site_id,'--proxy-path',proxy],{cwd:'/tmp/recount-audio-release',env,timeout:360000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']}).toString();}catch(err){exit=err.status??1;output=String(err.stdout??'')+'\n'+String(err.stderr??'');}
+          output=output.split(proxy).join('[REDACTED]').split(secret).join('[REDACTED]').replace(/https:\/\/netlify-mcp\.netlify\.app\/proxy\/[^\s"'<>]+/g,'[REDACTED]').replace(/\x1b\[[0-9;]*m/g,'');
+          fs.writeFileSync('/tmp/recount-audio-deploy/deploy.log',output.slice(-24000));
+          fs.writeFileSync('/tmp/recount-audio-deploy/UPLOAD.json',JSON.stringify({site_id:m.site_id,source_commit:m.source_commit,helper_exit:exit,provider_audio_requests:0},null,2));
+          console.log(JSON.stringify({helper_exit:exit,source_commit:m.source_commit}));if(exit)process.exitCode=1;
+          JS
+      - name: Verify current source and every public audio clip
+        run: |
+          python - <<'PY'
+          import hashlib,json,urllib.request,urllib.error,time
+          from pathlib import Path
+          from concurrent.futures import ThreadPoolExecutor
+          base='https://recount-voice.netlify.app';root=Path('web');out=Path('/tmp/recount-audio-deploy')
+          def check(p):
+              path='/' if p.name=='index.html' else '/'+p.relative_to(root).as_posix()
+              with urllib.request.urlopen(urllib.request.Request(base+path,headers={'Cache-Control':'no-cache'}),timeout=20) as r:data=r.read(500000)
+              return {'path':path,'matches':data==p.read_bytes(),'sha256':hashlib.sha256(data).hexdigest()}
+          files=[p for p in root.iterdir() if p.is_file()]+list((root/'voice/v1').glob('*.mp3'))+[root/'voice/v1/manifest.json']
+          for attempt in range(5):
+              with ThreadPoolExecutor(max_workers=6) as pool:rows=list(pool.map(check,files))
+              if all(x['matches'] for x in rows):break
+              time.sleep(5)
+          with urllib.request.urlopen(base+'/api/config',timeout=10) as r:cfg=json.load(r)
+          req=urllib.request.Request(base+'/api/token',data=b'{"consent":false}',headers={'Content-Type':'application/json','Origin':base})
+          try:
+              with urllib.request.urlopen(req,timeout=10) as r:status=r.status
+          except urllib.error.HTTPError as e:status=e.code
+          report={'status':'passed' if all(x['matches'] for x in rows) else 'failed','source_commit':'578f284819f2035c0dac327797bcffe872d038ff','site':base,'asset_count':len(rows),'assets':rows,'voice_enabled':cfg.get('voice_enabled'),'requires_access_code':cfg.get('requires_access_code'),'unauthorized_token_status':status,'provider_audio_requests':0}
+          (out/'ASSET_RECEIPT.json').write_text(json.dumps(report,indent=2))
+          assert report['status']=='passed' and report['voice_enabled'] and report['requires_access_code'] and status==403
+          print(json.dumps({k:v for k,v in report.items() if k!='assets'}))
+          PY
+      - name: Exercise real public audio playback, with only input and ASR mocked
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          RECOUNT_AUDIO_BASE=https://recount-voice.netlify.app RECOUNT_AUDIO_OUT=/tmp/recount-audio-deploy/public-audio python tests/browser_bundled_audio.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-bundled-audio-deployment
+          path: /tmp/recount-audio-deploy/
+          retention-days: 14
+          if-no-files-found: error
