@@ -5,6 +5,7 @@
 import {CaptureGate} from './capture-gate.mjs';
 import {streamingURL} from './streaming-request.mjs';
 import {normalizeTranscript} from './core.mjs';
+import {speechErrorCode,speechErrorMessage} from './readback.mjs';
 export class VoiceRuntime {
   constructor({getRevision,onTurn,onHold,onPartial=()=>{},onState=()=>{},onError=()=>{},promptReply=async()=>{},cancelPrompt=()=>{},onTrace=()=>{},deps={}}){
     Object.assign(this,{getRevision,onTurn,onHold,onPartial,onState,onError,promptReply,cancelPrompt,onTrace});
@@ -38,9 +39,9 @@ export class VoiceRuntime {
     try{v.node.port.postMessage({type:'drain'});}catch{this.fail(v,'audio_gap');return;}
     this.trace('readback_started',{generation});this.onState('prompting');
     let result;
-    try{result=await this.promptReply();}catch{if(generation!==v.promptGeneration||!this.live(v))return;this.onError('Read-back failed or timed out. Audio stopped; review the held draft.');this.fail(v,'audio_gap');return;}
+    try{result=await this.promptReply();}catch(error){if(generation!==v.promptGeneration||!this.live(v))return;const code=speechErrorCode(error?.code);this.trace('readback_failed',{code});this.fail(v,'audio_gap');this.onError(speechErrorMessage(code)+' Microphone stopped; the draft is held for review.');return;}
     if(generation!==v.promptGeneration||!this.live(v))return;
-    if(result?.status==='unavailable'||result?.status==='cancelled'){this.onError('Read-back did not complete. Stop and review the draft.');this.fail(v,'audio_gap');return;}
+    if(result?.status==='unavailable'||result?.status==='cancelled'){const code=result.status==='unavailable'?'speech-unavailable':'canceled';this.trace('readback_failed',{code});this.fail(v,'audio_gap');this.onError(speechErrorMessage(code)+' Microphone stopped; review the draft.');return;}
     if(v.gate.phase!=='listening'){v.prompting=false;return;}
     this.trace('readback_finished',{generation,status:result?.status??'completed'});
     try{v.input.connect(v.node);}catch{this.fail(v,'audio_gap');return;}

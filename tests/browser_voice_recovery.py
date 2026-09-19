@@ -41,6 +41,7 @@ def context(browser,timeout=False):
  c.route('**/*',route)
  page=c.new_page();page.on('pageerror',lambda e:browser_errors.append(str(e)))
  page.goto(BASE+'/',wait_until='networkidle');page.locator('summary').click();page.locator('#consent').check();page.locator('#speak').check()
+ page.locator('#speakerTest').click();page.locator('#speakerHeard').click()
  if timeout:page.evaluate("window.__fixture.speechMode='timeout'")
  page.locator('#listen').click();expect(page.locator('#mode')).to_have_text('AUDIO LISTENING')
  return c,page

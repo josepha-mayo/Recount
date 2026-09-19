@@ -1,16 +1,18 @@
 import {CATALOG,initial,reduce,replay,ready,exportCSV} from './core.mjs';
 import {VoiceRuntime} from './voice-runtime.mjs';
 import {ReadbackPlayer} from './readback.mjs';
+import {SpeakerCheck} from './speaker-check.mjs';
 import {VoiceAudit,redactForExport,hasCredentialText} from './voice-audit.mjs';
 const audit=new VoiceAudit();
 const $=id=>document.getElementById(id);let state=initial(),config=null,viewRevision=0;
 function error(e){$('error').textContent=e?.message??String(e);}
 const readback=new ReadbackPlayer();
+const speaker=new SpeakerCheck(readback,{onChange:()=>render(),onTrace:event=>audit.add(event)});
 function cancelSpeech(){readback.cancel();}
 function say(text){return $('speak').checked?readback.speak(text):Promise.resolve({status:'disabled'});}
 function speak(){if(!voice.active()&&state.history.at(-1)?.source==='assemblyai')void say(state.reply).catch(e=>error(e));}
 function render(){
-  viewRevision=state.revision;$('reply').textContent=state.reply;const p=state.pending,locked=voice.active();
+  viewRevision=state.revision;$('reply').textContent=state.reply;const p=state.pending,locked=voice.active()||speaker.busy();
   $('draft').textContent=p?`${CATALOG[p.sku].label} / ${p.quantity??'?'} ${p.unit??'unit?'}`:'No count waiting';
   $('clarification').textContent=state.hold?`On hold: ${state.hold.replaceAll('_',' ')}. Repeat the full count or discard it.`:p?.blocked?'Clarification required. This draft cannot be confirmed.':'';
   $('confirm').disabled=!ready(p)||Boolean(state.hold)||locked;$('discard').disabled=(!p&&!state.hold)||locked;
@@ -20,7 +22,7 @@ function render(){
     const tr=document.createElement('tr');for(const value of [CATALOG[sku].label,r.quantity,r.unit]){const td=document.createElement('td');td.textContent=value;tr.append(td);}body.append(tr);
   }
   const n=Object.keys(state.counts).length;$('countBadge').textContent=`${n} item${n===1?'':'s'}`;$('empty').hidden=n>0;
-  $('csv').disabled=!n||Boolean(state.hold)||locked;$('session').disabled=locked;$('voiceReport').disabled=locked||!audit.hasSession();
+  $('csv').disabled=!n||Boolean(state.hold)||locked;$('session').disabled=locked;$('voiceReport').disabled=locked||!audit.hasReport();
   $('reviewPanel').hidden=state.review.length===0;$('reviewCount').textContent=`${state.review.length} drafts`;
   const reviewRows=$('reviewRows');reviewRows.replaceChildren();
   for(const entry of state.review){
@@ -36,7 +38,10 @@ function render(){
   const phase=voice.phase();
   $('mode').textContent=locked?`AUDIO ${phase.toUpperCase()}`:state.hold?'REVIEW REQUIRED':'TEXT / REVIEW MODE';
   $('listen').textContent=phase==='draining'?'Waiting for final transcript…':phase==='prompting'?'Speaking read-back… stop session':locked?'Stop voice session':'Start voice session';
-  $('listen').disabled=phase==='draining'||(!locked&&(!config?.voice_enabled||!$('consent').checked));
+  $('listen').disabled=speaker.busy()||phase==='draining'||(!voice.active()&&(!config?.voice_enabled||!$('consent').checked||($('speak').checked&&!speaker.ready())));
+  $('speakerTest').disabled=voice.active()||speaker.busy();
+  $('speakerHeard').hidden=speaker.state!=='awaiting_confirmation';$('speakerUnheard').hidden=speaker.state!=='awaiting_confirmation';
+  $('speakerTestStatus').textContent=speaker.message();
   $('accessWrap').hidden=!config?.requires_access_code;
   $('accessCode').disabled=locked||!config?.requires_access_code;
   $('speak').disabled=locked;
@@ -48,7 +53,7 @@ function act(a){
 function userAction(a){try{if(voice.active())throw Error('Stop the voice session and wait for its final transcript first.');act({...a,revision:viewRevision});}catch(e){error(e);}}
 const voice=new VoiceRuntime({getRevision:()=>state.revision,onTurn:act,
   onHold:reason=>act({kind:'hold',reason}),onPartial:text=>{$('partial').textContent=text;},
-  onState:()=>render(),onError:error,promptReply:()=>say(state.reply),cancelPrompt:cancelSpeech,onTrace:event=>audit.add(event)});
+  onState:()=>render(),onError:message=>{error(message);},promptReply:()=>say(state.reply),cancelPrompt:cancelSpeech,onTrace:event=>{audit.add(event);if(event.event==='readback_failed'){speaker.state='failed';speaker.code=event.code;speaker.generation++;}}});
 function typed(text){
   if(hasCredentialText(text,[$('accessCode').value.trim()])){
     $('voiceSetup').open=true;
@@ -64,9 +69,9 @@ function download(name,data,type){const u=URL.createObjectURL(new Blob([data],{t
 $('csv').onclick=()=>{try{if(voice.active())throw Error('Finish the voice session before export.');download('recount-stock.csv',exportCSV(state),'text/csv');}catch(e){error(e);}};
 $('voiceReport').onclick=async()=>{try{
   if(voice.active())throw Error('Stop voice and wait for finalization before exporting the report.');
-  if(!audit.hasSession())throw Error('Start a voice session first.');
+  if(!audit.hasReport())throw Error('Run Test speaker or start a voice session first.');
   const revision=state.revision,hashes={};
-  for(const name of ['app.mjs','core.mjs','capture-gate.mjs','voice-runtime.mjs','readback.mjs','voice-audit.mjs','audio-worklet.js','streaming-request.mjs']){
+  for(const name of ['app.mjs','core.mjs','capture-gate.mjs','voice-runtime.mjs','readback.mjs','voice-audit.mjs','audio-worklet.js','streaming-request.mjs','speaker-check.mjs']){
     try{const r=await fetch('/'+name,{cache:'no-store'});if(!r.ok)continue;const digest=await crypto.subtle.digest('SHA-256',await r.arrayBuffer());hashes[name]=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');}catch{}
   }
   if(voice.active()||state.revision!==revision)throw Error('The session changed during export. Finish it and try again.');
@@ -82,6 +87,7 @@ $('load').onchange=async()=>{try{
 }catch(e){error(e);}};
 $('listen').onclick=async()=>{try{
   if(voice.active()){cancelSpeech();return voice.stop();}
+  if($('speak').checked&&!speaker.ready())throw Error('Tap Test speaker, then confirm you heard it before starting voice mode.');
   cancelSpeech();const runtimeConfig={...config};
   if(config?.requires_access_code){
     const code=$('accessCode').value.trim();
@@ -91,7 +97,9 @@ $('listen').onclick=async()=>{try{
   audit.add({event:'capture_options',spokenReadback:$('speak').checked});
   await voice.start(runtimeConfig,$('consent').checked);
 }catch(e){error(e);}};
-$('speak').onchange=()=>{cancelSpeech();render();};
+$('speakerTest').onclick=()=>{if(!voice.active())void speaker.test();};
+$('speakerHeard').onclick=()=>speaker.heard();$('speakerUnheard').onclick=()=>speaker.unheard();
+$('speak').onchange=()=>{speaker.reset();render();};
 $('consent').onchange=()=>{if(!$('consent').checked){cancelSpeech();voice.revoke();}render();};
 window.addEventListener('pagehide',()=>{cancelSpeech();voice.revoke();});
 render();try{
