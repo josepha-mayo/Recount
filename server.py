@@ -36,7 +36,21 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.headers.get('Host')!=f'127.0.0.1:{self.server.server_port}':return self.send(403,{'error':'Use the printed loopback URL'})
         if self.path=='/api/config':return self.send(200,{'csrf':TOKEN,'voice_enabled':enabled(),'provider_executed':False})
-        paths={'/':('index.html','text/html; charset=utf-8'),'/app.mjs':('app.mjs','text/javascript'),'/speaker-check.mjs':('speaker-check.mjs','text/javascript'),'/voice-audit.mjs':('voice-audit.mjs','text/javascript'),'/core.mjs':('core.mjs','text/javascript'),'/capture-gate.mjs':('capture-gate.mjs','text/javascript'),'/voice-runtime.mjs':('voice-runtime.mjs','text/javascript'),'/audio-worklet.js':('audio-worklet.js','text/javascript'),'/style.css':('style.css','text/css'),'/readback.mjs':('readback.mjs','text/javascript'),'/streaming-request.mjs':('streaming-request.mjs','text/javascript')}
+        paths={'/audio-readback.mjs':('audio-readback.mjs','text/javascript'),'/':('index.html','text/html; charset=utf-8'),'/app.mjs':('app.mjs','text/javascript'),'/speaker-check.mjs':('speaker-check.mjs','text/javascript'),'/voice-audit.mjs':('voice-audit.mjs','text/javascript'),'/core.mjs':('core.mjs','text/javascript'),'/capture-gate.mjs':('capture-gate.mjs','text/javascript'),'/voice-runtime.mjs':('voice-runtime.mjs','text/javascript'),'/audio-worklet.js':('audio-worklet.js','text/javascript'),'/style.css':('style.css','text/css'),'/readback.mjs':('readback.mjs','text/javascript'),'/streaming-request.mjs':('streaming-request.mjs','text/javascript')}
+        # Serve only manifest-listed public audio vocabulary, never arbitrary files.
+        if self.path.startswith('/voice/v1/'):
+            name=self.path.removeprefix('/voice/v1/')
+            directory=ROOT/'voice/v1'
+            if name=='manifest.json' and (directory/name).is_file():
+                return self.send(200,(directory/name).read_bytes(),'application/json')
+            if name.endswith('.mp3') and name[:-4].replace('-','').isalnum() and name==name.lower():
+                try:
+                    manifest=json.loads((directory/'manifest.json').read_text())
+                    item=manifest['clips'].get(name[:-4])
+                    if item and item['path']==self.path and (directory/name).is_file():
+                        return self.send(200,(directory/name).read_bytes(),'audio/mpeg')
+                except (OSError,ValueError,KeyError):pass
+            return self.send(404,{'error':'Not found'})
         if self.path not in paths:return self.send(404,{'error':'Not found'})
         path,mime=paths[self.path];return self.send(200,(ROOT/path).read_bytes(),mime)
     def do_POST(self):

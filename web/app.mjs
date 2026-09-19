@@ -1,12 +1,17 @@
 import {CATALOG,initial,reduce,replay,ready,exportCSV} from './core.mjs';
 import {VoiceRuntime} from './voice-runtime.mjs';
 import {ReadbackPlayer} from './readback.mjs';
+import {AudioReadbackPlayer} from './audio-readback.mjs';
 import {SpeakerCheck} from './speaker-check.mjs';
 import {VoiceAudit,redactForExport,hasCredentialText} from './voice-audit.mjs';
 const audit=new VoiceAudit();
 const $=id=>document.getElementById(id);let state=initial(),config=null,viewRevision=0;
 function error(e){$('error').textContent=e?.message??String(e);}
-const readback=new ReadbackPlayer();
+const nativeReadback=new ReadbackPlayer(),audioReadback=new AudioReadbackPlayer();
+const selectedPlayer=()=>$('voiceEngine').value==='native'?nativeReadback:audioReadback;
+const readback={cancel(){nativeReadback.cancel();audioReadback.cancel();},
+  speak(text){return selectedPlayer().speak(text);},
+  capabilities(){return {...selectedPlayer().capabilities(),backend:$('voiceEngine').value==='native'?'native-speech':'bundled-neural-audio'};}};
 const speaker=new SpeakerCheck(readback,{onChange:()=>render(),onTrace:event=>audit.add(event)});
 function cancelSpeech(){readback.cancel();}
 function say(text){return $('speak').checked?readback.speak(text):Promise.resolve({status:'disabled'});}
@@ -44,7 +49,7 @@ function render(){
   $('speakerTestStatus').textContent=speaker.message();
   $('accessWrap').hidden=!config?.requires_access_code;
   $('accessCode').disabled=locked||!config?.requires_access_code;
-  $('speak').disabled=locked;
+  $('speak').disabled=locked;$('voiceEngine').disabled=locked;
   $('voiceSetupStatus').textContent=$('speak').checked?'Voice replies ON. Wait for the reply to finish before speaking again.':'SILENT REVIEW MODE: no spoken replies. Read the on-screen response before continuing.';
 }
 function act(a){
@@ -71,7 +76,7 @@ $('voiceReport').onclick=async()=>{try{
   if(voice.active())throw Error('Stop voice and wait for finalization before exporting the report.');
   if(!audit.hasReport())throw Error('Run Test speaker or start a voice session first.');
   const revision=state.revision,hashes={};
-  for(const name of ['app.mjs','core.mjs','capture-gate.mjs','voice-runtime.mjs','readback.mjs','voice-audit.mjs','audio-worklet.js','streaming-request.mjs','speaker-check.mjs']){
+  for(const name of ['app.mjs','core.mjs','capture-gate.mjs','voice-runtime.mjs','readback.mjs','voice-audit.mjs','audio-worklet.js','streaming-request.mjs','speaker-check.mjs','audio-readback.mjs']){
     try{const r=await fetch('/'+name,{cache:'no-store'});if(!r.ok)continue;const digest=await crypto.subtle.digest('SHA-256',await r.arrayBuffer());hashes[name]=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');}catch{}
   }
   if(voice.active()||state.revision!==revision)throw Error('The session changed during export. Finish it and try again.');
@@ -100,6 +105,7 @@ $('listen').onclick=async()=>{try{
 $('speakerTest').onclick=()=>{if(!voice.active())void speaker.test();};
 $('speakerHeard').onclick=()=>speaker.heard();$('speakerUnheard').onclick=()=>speaker.unheard();
 $('speak').onchange=()=>{speaker.reset();render();};
+$('voiceEngine').onchange=()=>{speaker.reset();render();};
 $('consent').onchange=()=>{if(!$('consent').checked){cancelSpeech();voice.revoke();}render();};
 window.addEventListener('pagehide',()=>{cancelSpeech();voice.revoke();});
 render();try{

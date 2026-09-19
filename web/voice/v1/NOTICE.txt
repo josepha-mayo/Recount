@@ -1,0 +1,1 @@
+Stock neural audio generated at build time using Kokoro-82M (Apache-2.0) through kokoro-onnx (MIT). Voice preset bf_emma. No private recordings or voice cloning. No model weights or voice-bank files are distributed with the site. Source: https://huggingface.co/hexgrad/Kokoro-82M and https://github.com/thewh1teagle/kokoro-onnx

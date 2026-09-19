@@ -1,0 +1,77 @@
+name: Recount bundled audio integration
+on:
+  push:
+    branches: [fix/bundled-neural-playback-20260919]
+    paths: [.github/workflows/bundled-audio-integration.yml]
+permissions:
+  contents: write
+concurrency:
+  group: recount-bundled-integration
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      ALLOW_ASSEMBLYAI: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/bundled-neural-playback-20260919
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply checked integration and verify all generated audio bytes
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/recount-bundled-evidence
+          python scripts/prepare_audio_integration.py
+          python - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          p=Path('web/voice/v1');m=json.loads((p/'manifest.json').read_text())
+          for key,row in m['clips'].items():
+              b=(p/(key+'.mp3')).read_bytes()
+              assert len(b)==row['bytes'] and hashlib.sha256(b).hexdigest()==row['sha256']
+          Path('/tmp/recount-bundled-evidence/VOICE_ASSETS.json').write_text(json.dumps({'clips':len(m['clips']),'bytes':m['total_bytes'],'all_hashes_verified':True,'model_weights_distributed':False},indent=2))
+          PY
+          git add web/app.mjs web/index.html web/style.css web/readback.mjs web/voice-audit.mjs server.py tests/browser_speaker_check.py tests/browser_readback_barrier.py tests/browser_voice_recovery.py
+          mkdir -p /tmp/recount-tracked-test
+          git archive "$(git write-tree)" | tar -x -C /tmp/recount-tracked-test
+      - name: Test actual staged source and decoded audio
+        working-directory: /tmp/recount-tracked-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test tests/*.test.mjs | tee /tmp/recount-bundled-evidence/node.log
+          python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee /tmp/recount-bundled-evidence/http.log
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          python tests/browser.py 2>&1 | tee /tmp/recount-bundled-evidence/browser.log
+          RECOUNT_RECOVERY_OUT=/tmp/recount-bundled-evidence/recovery python tests/browser_voice_recovery.py 2>&1 | tee /tmp/recount-bundled-evidence/recovery.log
+          RECOUNT_BARRIER_OUT=/tmp/recount-bundled-evidence/barrier python tests/browser_readback_barrier.py 2>&1 | tee /tmp/recount-bundled-evidence/barrier.log
+          RECOUNT_SPEAKER_OUT=/tmp/recount-bundled-evidence/native-compat python tests/browser_speaker_check.py 2>&1 | tee /tmp/recount-bundled-evidence/native-compat.log
+          python tests/browser_voice_setup.py 2>&1 | tee /tmp/recount-bundled-evidence/setup.log
+          RECOUNT_AUDIO_OUT=/tmp/recount-bundled-evidence/real-audio python tests/browser_bundled_audio.py 2>&1 | tee /tmp/recount-bundled-evidence/real-audio.log
+      - name: Publish only the tested integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = fix/bundled-neural-playback-20260919
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Default to verified bundled neural audio; retain explicit native compatibility option'
+          git pull --rebase origin fix/bundled-neural-playback-20260919
+          git push origin HEAD:fix/bundled-neural-playback-20260919
+          git rev-parse HEAD > /tmp/recount-bundled-evidence/SOURCE_COMMIT.txt
+          git archive --format=zip --prefix=Recount/ HEAD > /tmp/recount-bundled-evidence/Recount-Tested-Source.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-bundled-audio-integration
+          path: /tmp/recount-bundled-evidence/
+          retention-days: 14
+          if-no-files-found: error
