@@ -31,11 +31,13 @@ def emit(page,text,order,low=None):
 
 def context(browser,timeout=False):
  c=browser.new_context(viewport={'width':1360,'height':1050},accept_downloads=True)
- c.add_init_script(FIXTURE)
+ c.add_init_script(FIXTURE);calls={'config':0,'token_csrf':[]}
  def route(q):
   url=q.request.url
-  if url.startswith(BASE+'/api/config'):q.fulfill(json={'voice_enabled':True,'requires_access_code':False,'csrf':'synthetic-fixture'})
-  elif url.startswith(BASE+'/api/token'):q.fulfill(json={'token':'synthetic-token-not-valid','max_session_duration_seconds':90,'speech_model':'universal-3-5-pro'})
+  if url.startswith(BASE+'/api/config'):
+   calls['config']+=1;q.fulfill(json={'voice_enabled':True,'requires_access_code':False,'csrf':f"synthetic-fixture-{calls['config']}"})
+  elif url.startswith(BASE+'/api/token'):
+   calls['token_csrf'].append(q.request.headers.get('x-recount-token'));q.fulfill(json={'token':'synthetic-token-not-valid','max_session_duration_seconds':90,'speech_model':'universal-3-5-pro'})
   elif url.startswith(BASE+'/'):q.continue_()
   else:raise AssertionError('Unexpected external HTTP request: '+url.split('?')[0])
  c.route('**/*',route)
@@ -44,6 +46,7 @@ def context(browser,timeout=False):
  page.locator('#speakerTest').click();page.locator('#speakerHeard').click()
  if timeout:page.evaluate("window.__fixture.speechMode='timeout'")
  page.locator('#listen').click();expect(page.locator('#mode')).to_have_text('AUDIO LISTENING')
+ assert calls['config']==2 and calls['token_csrf']==['synthetic-fixture-2']
  return c,page
 try:
  for _ in range(40):
