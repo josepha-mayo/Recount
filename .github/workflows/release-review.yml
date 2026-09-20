@@ -1,0 +1,50 @@
+name: Recount release review
+on:
+  push:
+    branches: [master]
+    paths: [.github/workflows/release-review.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Regressions and reviewable source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/recount-release-review
+          node --test tests/*.test.mjs > /tmp/recount-release-review/node.log
+          python -m unittest discover -s tests -p 'test_*.py' -v > /tmp/recount-release-review/http.log 2>&1
+          git archive HEAD web tests netlify server.py requirements-dev.txt package.json netlify.toml README.md SUBMISSION_DRAFT.md PRODUCT.md evaluation diagnostics delivery verification maintenance migration > /tmp/recount-release-review/source.tar
+          git rev-parse HEAD > /tmp/recount-release-review/source-commit.txt
+      - name: Report credential availability without values
+        env:
+          HAS_NETLIFY_AUTH: ${{ secrets.NETLIFY_AUTH_TOKEN != '' }}
+          HAS_JUDGE_CODE: ${{ secrets.RECOUNT_DEMO_PASS != '' }}
+          HAS_PROVIDER_KEY: ${{ secrets.ASSEMBLYAI_API_KEY != '' }}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          r={k:os.environ.get(k)=='true' for k in ['HAS_NETLIFY_AUTH','HAS_JUDGE_CODE','HAS_PROVIDER_KEY']}
+          Path('/tmp/recount-release-review/PREREQUISITES.json').write_text(json.dumps(r,indent=2))
+          print(json.dumps(r))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-release-review
+          path: /tmp/recount-release-review/
+          retention-days: 7
