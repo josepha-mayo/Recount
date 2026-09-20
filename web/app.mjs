@@ -83,7 +83,7 @@ $('voiceReport').onclick=async()=>{try{
   if(voice.active())throw Error('Stop voice and wait for finalization before exporting the report.');
   if(!audit.hasReport())throw Error('Run Test speaker or start a voice session first.');
   const revision=state.revision,hashes={};
-  for(const name of ['app.mjs','core.mjs','capture-gate.mjs','voice-runtime.mjs','readback.mjs','voice-audit.mjs','audio-worklet.js','streaming-request.mjs','speaker-check.mjs','audio-readback.mjs']){
+  for(const name of ['app.mjs','core.mjs','capture-gate.mjs','voice-runtime.mjs','readback.mjs','voice-audit.mjs','audio-worklet.js','streaming-request.mjs','speaker-check.mjs','audio-readback.mjs','startup-errors.mjs']){
     try{const r=await fetch('/'+name,{cache:'no-store'});if(!r.ok)continue;const digest=await crypto.subtle.digest('SHA-256',await r.arrayBuffer());hashes[name]=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');}catch{}
   }
   if(voice.active()||state.revision!==revision)throw Error('The session changed during export. Finish it and try again.');

@@ -2,6 +2,7 @@
    local spoken read-back while microphone audio is disconnected from the
    streaming worklet, then listening resumes. Permanent provider keys never
    enter this module. */
+import {startupFailure} from './startup-errors.mjs';
 import {CaptureGate} from './capture-gate.mjs';
 import {streamingURL} from './streaming-request.mjs';
 import {normalizeTranscript} from './core.mjs';
@@ -30,7 +31,7 @@ export class VoiceRuntime {
     try{Promise.resolve(v.ctx?.close()).catch(()=>{});}catch{}
     if(this.current===v){this.current=null;this.trace('session_closed');this.onState('idle');}
   }
-  fail(v,reason){if(!this.live(v))return;this.trace('session_hold',{reason});try{v.gate.fail(reason);}finally{this.finish(v);}}
+  fail(v,reason,message){if(!this.live(v))return;this.trace('session_hold',{reason});try{v.gate.fail(reason);}finally{this.finish(v);if(message)this.onError(message);}}
   async prompt(v){
     if(!this.live(v)||v.gate.phase!=='listening'||!v.input||!v.node||v.prompting)return;
     const generation=++v.promptGeneration;v.prompting=true;
@@ -59,7 +60,10 @@ export class VoiceRuntime {
     const v={epoch:++this.generation,finished:false,prompting:false,promptGeneration:0};this.current=v;this.trace('session_requested',{epoch:v.epoch});
     v.gate=new CaptureGate({epoch:v.epoch,getRevision:this.getRevision,onTurn:this.onTurn,
       onHold:this.onHold,onPartial:this.onPartial,onPhase:p=>this.onState(p)});
-    this.onState('connecting');this.timer(v,'handshake',20000,()=>this.fail(v,'stream_lost'));
+    this.onState('connecting');this.timer(v,'handshake',20000,()=>{
+      this.trace('setup_failed',{stage:v.setupStage??'unknown',failureCode:'startup_timeout'});
+      this.fail(v,'stream_lost','Voice setup timed out. Check microphone permission and your connection. Nothing was saved.');
+    });
     try{
       this.setup(v,'microphone_request');
       const stream=await this.d.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true}});
@@ -88,8 +92,7 @@ export class VoiceRuntime {
             const text=normalizeTranscript(String(message.transcript??''));
             if(/^(?:confirm|confirmed|save|saved)(?:\s|$)/.test(text)){
               this.trace('premature_confirmation_rejected',{order:message.turn_order});
-              this.onError('Confirmation arrived before read-back finished. Nothing new saved; review the draft.');
-              this.fail(v,'stale_turn');return;
+              this.fail(v,'stale_turn','Confirmation arrived before read-back finished. Nothing new saved; review the draft.');return;
             }
             // A newer correction must replace the old spoken reply. Invalidating
             // its generation prevents the cancelled promise reopening capture.
@@ -125,17 +128,17 @@ export class VoiceRuntime {
           } else if(outcome==='final' && this.live(v) && v.gate.phase==='listening') {
             await this.prompt(v);
           }
-        }catch{this.onError('Streaming data could not be verified. Review the held count.');this.fail(v,'invalid_event');}
+        }catch{this.fail(v,'invalid_event','Streaming data could not be verified. Review the held count.');}
       };
-      v.ws.onerror=()=>{if(this.live(v)){this.trace('socket_error');try{v.input?.disconnect();}catch{}this.onError('Connection failed. The count remains unconfirmed.');this.timer(v,'socketError',750,()=>this.fail(v,'stream_lost'));}};
-      v.ws.onclose=e=>{if(this.live(v)){this.clear(v,'socketError');this.trace('socket_closed',{closeCode:e?.code,wasClean:e?.wasClean});v.gate.transportClosed();this.finish(v);}};
+      v.ws.onerror=()=>{if(this.live(v)){this.trace('socket_error');try{v.input?.disconnect();}catch{}v.socketFailure='Connection failed. The count remains unconfirmed.';this.onError(v.socketFailure);this.timer(v,'socketError',750,()=>this.fail(v,'stream_lost',v.socketFailure));}};
+      v.ws.onclose=e=>{if(this.live(v)){this.clear(v,'socketError');this.trace('socket_closed',{closeCode:e?.code,wasClean:e?.wasClean});v.gate.transportClosed();this.finish(v);if(v.socketFailure)this.onError(v.socketFailure);}};
       return true;
     }catch(e){
       if(this.live(v)){
-        this.trace('setup_failed',{stage:v.setupStage??'unknown',errorName:e?.name});
-        const known=new Set(['Invalid judge access code.','Refresh the page before starting voice mode.','Provider token service is temporarily unavailable.','Provider token service rejected the request.','Voice mode is not configured on this deployment.']);
-        const message=known.has(e?.message)?e.message:`Microphone or provider setup failed during ${String(v.setupStage??'startup').replaceAll('_',' ')}. No successful transcription is claimed.`;
-        this.onError(message);this.fail(v,'stream_lost');
+        const failure=startupFailure(e,v.setupStage);
+        this.trace('setup_failed',{stage:v.setupStage??'unknown',errorName:e?.name,failureCode:failure.code});
+        // onHold dispatches act(), which clears the UI error. Report after cleanup.
+        this.fail(v,'stream_lost',failure.message);
       }
       return false;
     }

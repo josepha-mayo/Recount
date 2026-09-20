@@ -17,6 +17,7 @@ export function redactForExport(value,secrets=[]){
 }
 export function hasCredentialText(text,secrets=[]){return redactForExport(text,secrets).redactions>0;}
 
+import {STARTUP_FAILURE_CODES} from './startup-errors.mjs';
 import {SPEECH_ERRORS} from './readback.mjs';
 /* Local-only, bounded interaction evidence. No audio, credentials or query URLs. */
 const EVENTS=new Set(['speaker_test_started','speaker_test_finished','speaker_test_confirmed','speaker_test_unheard','speaker_test_failed','readback_failed','capture_options','session_requested','setup_stage','setup_failed','socket_open','socket_error','socket_closed','provider_begin','provider_final','duplicate_final_ignored','readback_started','readback_finished','readback_cancelled','readback_superseded','premature_confirmation_rejected','session_hold','session_closed','stop_requested','consent_revoked']);
@@ -36,6 +37,7 @@ export class VoiceAudit {
     if(REASONS.has(row.reason))out.reason=row.reason;
     if(SETUP_STAGES.has(row.stage))out.setup_stage=row.stage;
     if(ERROR_NAMES.has(row.errorName))out.error_name=row.errorName;
+    if(STARTUP_FAILURE_CODES.has(row.failureCode))out.failure_code=row.failureCode;
     if(Number.isInteger(row.httpStatus)&&row.httpStatus>=100&&row.httpStatus<=599)out.http_status=row.httpStatus;
     if(Number.isInteger(row.sampleRate)&&row.sampleRate>=8000&&row.sampleRate<=192000)out.sample_rate=row.sampleRate;
     if(Number.isInteger(row.closeCode)&&row.closeCode>=0&&row.closeCode<=4999)out.close_code=row.closeCode;
@@ -53,12 +55,12 @@ export class VoiceAudit {
   snapshot(state,{origin='',assetHashes={},secrets=[]}={}){
     let site='';try{site=new URL(origin).origin;}catch{}
     const hashes={};
-    for(const name of ['app.mjs','core.mjs','capture-gate.mjs','voice-runtime.mjs','readback.mjs','voice-audit.mjs','audio-worklet.js','streaming-request.mjs','speaker-check.mjs','audio-readback.mjs']){
+    for(const name of ['app.mjs','core.mjs','capture-gate.mjs','voice-runtime.mjs','readback.mjs','voice-audit.mjs','audio-worklet.js','streaming-request.mjs','speaker-check.mjs','audio-readback.mjs','startup-errors.mjs']){
       const hash=assetHashes[name];if(typeof hash==='string'&&/^[a-f0-9]{64}$/.test(hash))hashes[name]=hash;
     }
     const safe=redactForExport({schema:'recount-session-2',revision:state.revision,counts:state.counts,pending:state.pending,review:state.review,hold:state.hold,history:state.history},secrets);
     return {
-      schema:'recount-interaction-report-1',client_revision:'bundled-neural-audio-startup-diagnostics-20260919',site,
+      schema:'recount-interaction-report-1',client_revision:'persistent-startup-errors-20260920',site,
       classification:'Client-collected interaction evidence; no automatic pass, human-speaker, physical-count or ASR-accuracy claim.',
       privacy:{audio_recorded:false,audio_in_report:false,configured_credentials_included:false,known_credential_redactions:safe.redactions,review_before_sharing:true,contains_transcript_text:true,upload_performed:false},
       events:structuredClone(this.events),events_dropped:this.dropped,asset_sha256:hashes,
