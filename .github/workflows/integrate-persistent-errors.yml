@@ -1,0 +1,156 @@
+name: Integrate persistent startup errors
+on:
+  push:
+    branches: [master]
+    paths: [.github/workflows/integrate-persistent-errors.yml]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply bounded source change and regression cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/recount-persistent-errors
+          git apply --check maintenance/persistent-startup-errors.patch
+          git apply maintenance/persistent-startup-errors.patch
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('web/voice-runtime.mjs');s=p.read_text()
+          def replace(old,new):
+              global s
+              assert s.count(old)==1, 'Unexpected source context'
+              s=s.replace(old,new)
+          replace("import {CaptureGate}","import {startupFailure} from './startup-errors.mjs';\nimport {CaptureGate}")
+          replace("fail(v,reason){if(!this.live(v))return;this.trace('session_hold',{reason});try{v.gate.fail(reason);}finally{this.finish(v);}}", "fail(v,reason,message){if(!this.live(v))return;this.trace('session_hold',{reason});try{v.gate.fail(reason);}finally{this.finish(v);if(message)this.onError(message);}}")
+          replace("this.onState('connecting');this.timer(v,'handshake',20000,()=>this.fail(v,'stream_lost'));", "this.onState('connecting');this.timer(v,'handshake',20000,()=>{\n      this.trace('setup_failed',{stage:v.setupStage??'unknown',failureCode:'startup_timeout'});\n      this.fail(v,'stream_lost','Voice setup timed out. Check microphone permission and your connection. Nothing was saved.');\n    });")
+          replace("this.onError('Confirmation arrived before read-back finished. Nothing new saved; review the draft.');\n              this.fail(v,'stale_turn');return;", "this.fail(v,'stale_turn','Confirmation arrived before read-back finished. Nothing new saved; review the draft.');return;")
+          replace("}catch{this.onError('Streaming data could not be verified. Review the held count.');this.fail(v,'invalid_event');}","}catch{this.fail(v,'invalid_event','Streaming data could not be verified. Review the held count.');}")
+          replace("this.onError('Connection failed. The count remains unconfirmed.');this.timer(v,'socketError',750,()=>this.fail(v,'stream_lost'));", "v.socketFailure='Connection failed. The count remains unconfirmed.';this.onError(v.socketFailure);this.timer(v,'socketError',750,()=>this.fail(v,'stream_lost',v.socketFailure));")
+          replace("v.gate.transportClosed();this.finish(v);", "v.gate.transportClosed();this.finish(v);if(v.socketFailure)this.onError(v.socketFailure);")
+          a=s.index("        this.trace('setup_failed',{stage:v.setupStage??'unknown',errorName:e?.name});")
+          b=s.index("\n      }\n      return false;",a)
+          s=s[:a]+"""        const failure=startupFailure(e,v.setupStage);
+                  this.trace('setup_failed',{stage:v.setupStage??'unknown',errorName:e?.name,failureCode:failure.code});
+                  // onHold dispatches act(), which clears the UI error. Report after cleanup.
+                  this.fail(v,'stream_lost',failure.message);"""+s[b:]
+          p.write_text(s)
+          p=Path('web/voice-audit.mjs');s=p.read_text().replace("import {SPEECH_ERRORS}","import {STARTUP_FAILURE_CODES} from './startup-errors.mjs';\nimport {SPEECH_ERRORS}",1)
+          s=s.replace("if(ERROR_NAMES.has(row.errorName))out.error_name=row.errorName;", "if(ERROR_NAMES.has(row.errorName))out.error_name=row.errorName;\n    if(STARTUP_FAILURE_CODES.has(row.failureCode))out.failure_code=row.failureCode;")
+          s=s.replace("'audio-readback.mjs']", "'audio-readback.mjs','startup-errors.mjs']")
+          s=s.replace("bundled-neural-audio-startup-diagnostics-20260919","persistent-startup-errors-20260920");p.write_text(s)
+          p=Path('web/app.mjs');s=p.read_text().replace("'audio-readback.mjs']", "'audio-readback.mjs','startup-errors.mjs']");p.write_text(s)
+          PY
+          cat > tests/startup-errors.test.mjs <<'JS'
+          // Mirrors app.mjs clearing the error display in its hold reducer.
+          import test from 'node:test';
+          import assert from 'node:assert/strict';
+          import {VoiceRuntime} from '../web/voice-runtime.mjs';
+          import {VoiceAudit} from '../web/voice-audit.mjs';
+          import {initial,reduce} from '../web/core.mjs';
+          function fixture({httpStatus=200,message,mediaError}={}) {
+            let state=initial(),visible='',stops=0,seq=0;
+            const timers=new Map(),sockets=[],traces=[];
+            class Socket {static OPEN=1;constructor(){this.readyState=1;this.bufferedAmount=0;sockets.push(this);}close(){this.readyState=3;}send(){}async emit(data){await this.onmessage({data:JSON.stringify(data)});}}
+            class Context {constructor(){this.sampleRate=16000;this.audioWorklet={addModule:async()=>{}};this.destination={};}createMediaStreamSource(){return {connect(){},disconnect(){}};}resume(){return Promise.resolve();}close(){return Promise.resolve();}}
+            class Worklet{constructor(){this.port={postMessage(){}};}connect(){}disconnect(){}}
+            const runtime=new VoiceRuntime({getRevision:()=>state.revision,onTurn:a=>{visible='';state=reduce(state,a);},onHold:reason=>{visible='';state=reduce(state,{kind:'hold',reason,revision:state.revision});},onError:m=>{visible=m;},onTrace:e=>traces.push(e),deps:{WebSocket:Socket,AudioContext:Context,AudioWorkletNode:Worklet,mediaDevices:{getUserMedia:async()=>{if(mediaError)throw mediaError;return {getTracks:()=>[{stop(){stops++;}}]};}},fetch:async()=>({ok:httpStatus===200,status:httpStatus,json:async()=>httpStatus===200?{token:'synthetic-only-token',max_session_duration_seconds:90,speech_model:'universal-3-5-pro'}:{error:message}}),setTimeout:(fn,ms)=>{const id=++seq;timers.set(id,{fn,ms});return id;},clearTimeout:id=>timers.delete(id)}});
+            return {runtime,sockets,traces,timers,get visible(){return visible;},get state(){return state;},get stops(){return stops;},start:()=>runtime.start({voice_enabled:true,csrf:'synthetic-csrf'},true),fire:ms=>{const t=[...timers.values()].find(x=>x.ms===ms);assert.ok(t);t.fn();}};
+          }
+          for(const [status,message] of [[403,'Invalid judge access code.'],[403,'Refresh the page before starting voice mode.'],[403,'Same-origin request required.'],[502,'Provider token service rejected the request.']])test(`startup ${status} remains visible: ${message}`,async()=>{const f=fixture({httpStatus:status,message});await f.start();assert.equal(f.visible,message);assert.equal(f.runtime.active(),false);assert.equal(f.sockets.length,0);assert.ok(f.stops);assert.equal(f.state.hold,'stream_lost');});
+          test('unknown provider body never reaches display or trace',async()=>{const f=fixture({httpStatus:502,message:'secret-token-example=do-not-include'});await f.start();assert.ok(f.visible);assert.doesNotMatch(f.visible,/secret-token/);assert.doesNotMatch(JSON.stringify(f.traces),/secret-token/);});
+          test('handshake timeout stays visible after capture is released',async()=>{const f=fixture();await f.start();f.fire(20000);assert.match(f.visible,/timed out/i);assert.ok(f.stops);assert.equal(f.runtime.active(),false);});
+          test('socket error survives later close and hold',async()=>{const f=fixture();await f.start();f.sockets[0].onerror();f.sockets[0].onclose({code:1006,wasClean:false});assert.match(f.visible,/connection/i);assert.equal(f.runtime.active(),false);});
+          test('socket error survives timeout without close',async()=>{const f=fixture();await f.start();f.sockets[0].onerror();f.fire(750);assert.match(f.visible,/connection/i);assert.equal(f.runtime.active(),false);});
+          test('malformed stream error survives hold',async()=>{const f=fixture();await f.start();await f.sockets[0].onmessage({data:'not JSON'});assert.match(f.visible,/streaming data/i);assert.equal(f.runtime.active(),false);});
+          test('microphone denial stays visible without private device labels',async()=>{const f=fixture({mediaError:Object.assign(Error('private device label'),{name:'NotAllowedError'})});await f.start();assert.ok(f.visible);assert.doesNotMatch(f.visible,/private device label/);assert.equal(f.runtime.active(),false);});
+          test('report contains safe authorization failure class',async()=>{const f=fixture({httpStatus:403,message:'Invalid judge access code.'});await f.start();const a=new VoiceAudit();for(const e of f.traces)a.add(e);assert.equal(a.snapshot(f.state).events.find(e=>e.event==='setup_failed').failure_code,'invalid_access_code');});
+          JS
+          cat > tests/browser_startup_errors.py <<'PY'
+          """Real browser with mocked authorization, capture and ASR. No human audio."""
+          import json,os,subprocess,sys,time,urllib.request
+          from pathlib import Path
+          from playwright.sync_api import sync_playwright,expect
+          ROOT=Path(__file__).resolve().parents[1];OUT=Path(os.getenv('RECOUNT_STARTUP_OUT','/tmp/recount-startup-browser'));OUT.mkdir(parents=True,exist_ok=True);BASE='http://127.0.0.1:8913'
+          server=subprocess.Popen([sys.executable,'server.py','--port','8913'],cwd=ROOT,env={**os.environ,'ALLOW_ASSEMBLYAI':'false'},stdout=subprocess.DEVNULL)
+          FIXTURE=r'''(()=>{const f=window.__startup={sockets:[],streams:[],contexts:[]};navigator.mediaDevices.getUserMedia=async()=>{const c=new AudioContext(),d=c.createMediaStreamDestination();f.contexts.push(c);f.streams.push(d.stream);return d.stream;};class Socket{static OPEN=1;constructor(){this.readyState=1;this.bufferedAmount=0;f.sockets.push(this);setTimeout(()=>this.emit({type:'Begin',id:'synthetic-session'}),0);}async emit(m){await this.onmessage?.({data:JSON.stringify(m)});}send(m){if(typeof m==='string'&&JSON.parse(m).type==='Terminate')setTimeout(()=>this.emit({type:'Termination'}),0);}close(){this.readyState=3;}}Object.defineProperty(window,'WebSocket',{value:Socket});})();'''
+          checks=[];errors=[]
+          try:
+           for _ in range(40):
+            try:urllib.request.urlopen(BASE+'/api/config',timeout=1);break
+            except Exception:time.sleep(.1)
+           with sync_playwright() as pw:
+            browser=pw.chromium.launch(headless=True,executable_path=os.getenv('RECOUNT_BROWSER_PATH'))
+            for width,height in [(1360,1000),(390,844)]:
+             c=browser.new_context(viewport={'width':width,'height':height},accept_downloads=True);c.add_init_script(FIXTURE);allowed={'value':False}
+             c.route('**/api/config',lambda q:q.fulfill(json={'voice_enabled':True,'requires_access_code':True,'csrf':'synthetic-csrf'}))
+             def token(q):
+              assert q.request.post_data_json['access_code']=='synthetic-private-code'
+              if not allowed['value']:q.fulfill(status=403,json={'error':'Invalid judge access code.'})
+              else:q.fulfill(json={'token':'synthetic-provider-token','max_session_duration_seconds':90,'speech_model':'universal-3-5-pro'})
+             c.route('**/api/token',token);p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.goto(BASE,wait_until='networkidle');p.locator('summary').click();p.locator('#speak').uncheck();p.locator('#consent').check();p.locator('#accessCode').fill('synthetic-private-code');p.locator('#listen').click()
+             expect(p.locator('#error')).to_have_text('Invalid judge access code.');expect(p.locator('#mode')).to_have_text('REVIEW REQUIRED');assert p.evaluate('__startup.sockets.length===0 && __startup.streams.every(s=>s.getTracks().every(t=>t.readyState==="ended"))');checks.append(f'{width}:error persists after hold and capture cleanup; no socket opened');p.screenshot(path=str(OUT/f'authorization-error-{width}.png'),full_page=True)
+             with p.expect_download() as event:p.locator('#voiceReport').click()
+             event.value.save_as(OUT/f'authorization-error-{width}.json');data=(OUT/f'authorization-error-{width}.json').read_text();r=json.loads(data);assert any(e.get('failure_code')=='invalid_access_code' for e in r['events']);assert 'synthetic-private-code' not in data and 'synthetic-csrf' not in data;checks.append(f'{width}:report includes failure class without credentials')
+             allowed['value']=True;p.locator('#listen').click();expect(p.locator('#mode')).to_have_text('AUDIO LISTENING')
+             for n,text in enumerate(['Rice 12 bags','No 13 bags','Confirm 13']):
+              m={'type':'Turn','turn_order':n,'end_of_turn':True,'transcript':text,'words':[{'text':w,'confidence':.99}for w in text.split()]};p.evaluate('(m)=>__startup.sockets.at(-1).emit(m)',m);expect(p.locator('#mode')).to_have_text('AUDIO LISTENING')
+             expect(p.locator('#rows tr')).to_have_count(1);expect(p.locator('#rows')).to_contain_text('13');p.locator('#listen').click();expect(p.locator('#mode')).to_have_text('TEXT / REVIEW MODE')
+             with p.expect_download() as event:p.locator('#csv').click()
+             event.value.save_as(OUT/f'retry-{width}.csv');assert (OUT/f'retry-{width}.csv').read_text()=='item,quantity,unit\nRice,13,bags\n';checks.append(f'{width}:accepted mocked retry exports exactly one Rice 13 row');p.screenshot(path=str(OUT/f'retry-success-{width}.png'),full_page=True);assert not errors;assert p.evaluate('document.documentElement.scrollWidth<=innerWidth');checks.append(f'{width}:no JavaScript errors or horizontal overflow');c.close()
+            browser.close()
+           receipt={'status':'passed','check_count':len(checks),'checks':checks,'provider_requests':0,'human_audio_cases':0,'physical_microphone_used':False,'scope':'Real browser/app/downloads; authorization, microphone and ASR mocked. Not live authorization or human speech proof.'};(OUT/'RECEIPT.json').write_text(json.dumps(receipt,indent=2));print(json.dumps(receipt))
+          finally:server.terminate();server.wait(timeout=5)
+          PY
+      - name: Verify source, actual browser UI and bundled audio
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test tests/*.test.mjs | tee /tmp/recount-persistent-errors/node.log
+          python -m unittest discover -s tests -p 'test_*.py' -v > /tmp/recount-persistent-errors/http.log 2>&1
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          RECOUNT_STARTUP_OUT=/tmp/recount-persistent-errors/startup python tests/browser_startup_errors.py
+          RECOUNT_VOICE_TEST_OUT=/tmp/recount-persistent-errors/recovery python tests/browser_voice_recovery.py
+          RECOUNT_AUDIO_OUT=/tmp/recount-persistent-errors/audio python tests/browser_bundled_audio.py
+          python tests/browser.py
+          cp verification/browser.json /tmp/recount-persistent-errors/browser.json
+      - name: Save verified source in dedicated branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'josepha-mayo'
+          git config user.email '192471872+josepha-mayo@users.noreply.github.com'
+          git add web/app.mjs web/voice-runtime.mjs web/voice-audit.mjs web/startup-errors.mjs tests/startup-errors.test.mjs tests/browser_startup_errors.py
+          git commit -m 'Preserve startup errors after hold and verify failed-code retry'
+          git push origin HEAD:refs/heads/fix/persistent-startup-errors-20260920
+          git rev-parse HEAD > /tmp/recount-persistent-errors/source-commit.txt
+          git archive HEAD web tests netlify server.py requirements-dev.txt package.json netlify.toml README.md SUBMISSION_DRAFT.md > /tmp/recount-persistent-errors/source.tar
+      - name: Capture official submission requirements
+        if: always()
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import urllib.request
+          try:
+              req=urllib.request.Request('https://lablab.ai/ai-hackathons/assemblyai-voice-agent-hackathon',headers={'User-Agent':'Recount-release-verification/1.0'})
+              with urllib.request.urlopen(req,timeout=20) as r:html=r.read(2000000)
+              Path('/tmp/recount-persistent-errors/hackathon.html').write_bytes(html)
+          except Exception as e:print('Requirements fetch unavailable:',type(e).__name__)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-persistent-errors
+          path: /tmp/recount-persistent-errors/
+          retention-days: 14
