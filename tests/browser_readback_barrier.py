@@ -45,7 +45,8 @@ try:
    with page.expect_download() as d:page.locator('#voiceReport').click()
    dest=OUT/f'premature-{width}.json';d.value.save_as(dest);raw=dest.read_text();r=json.loads(raw)
    assert r['summary']['premature_confirmations_rejected']==1 and r['ledger']['counts']=={} and r['ledger']['hold']=='stale_turn'
-   assert len(r['asset_sha256'])==10 and 'audio-readback.mjs' in r['asset_sha256'] and 'PRIVATE_CSRF_SENTINEL' not in raw and 'PRIVATE_PROVIDER_SENTINEL' not in raw
+   expected_assets={'app.mjs','core.mjs','capture-gate.mjs','voice-runtime.mjs','readback.mjs','voice-audit.mjs','audio-worklet.js','streaming-request.mjs','speaker-check.mjs','audio-readback.mjs','startup-errors.mjs'}
+   assert set(r['asset_sha256'])==expected_assets and 'PRIVATE_CSRF_SENTINEL' not in raw and 'PRIVATE_PROVIDER_SENTINEL' not in raw
    assert r['privacy']['audio_in_report'] is False;checks.append(f'{width}:download includes held ledger and hashes but no credentials or audio')
    page.screenshot(path=str(OUT/f'held-{width}.png'),full_page=True);ctx.close()
    ctx,page=open_session(browser,width)
