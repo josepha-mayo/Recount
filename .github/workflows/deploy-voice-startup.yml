@@ -1,0 +1,151 @@
+name: Deploy and verify Recount startup
+'on':
+  push:
+    branches: [master]
+    paths: [.github/workflows/deploy-voice-startup.yml]
+permissions:
+  contents: read
+concurrency:
+  group: recount-production-release
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: e1e47d6b5969055382f96b671b9a53c62e267ce2
+        persist-credentials: false
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22.16.0'
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Regression gate before publication
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p /tmp/recount-startup-evidence
+        node --test tests/*.test.mjs | tee /tmp/recount-startup-evidence/node.log
+        python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee /tmp/recount-startup-evidence/http.log
+    - name: Publish pinned source and verify real bounded startup
+      env:
+        ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        node --input-type=module <<'JS'
+        import {hkdfSync,createDecipheriv,createHash} from 'node:crypto';
+        import {execFileSync} from 'node:child_process';
+        import fs from 'node:fs';
+        import {streamingURL} from './web/streaming-request.mjs';
+        const e={"meta":{"repository":"josepha-mayo/Recount","site_id":"df8d4f20-8294-4f70-820a-731fa440156b","source_commit":"e1e47d6b5969055382f96b671b9a53c62e267ce2","expires_at":"2026-09-20T00:40:28.692862+00:00"},"salt":"f378de2c4a0876d2603bf03b57d89776d201de7bb4055c0c655a80cdef4444b5","iv":"e3178add6ace4b2060b8ce82","ciphertext":"XbIMisHVXxsy318cJcwZOZIpJOzpMETZVm0CSYMeh2v1Z565OwFysIgdqUPyO8s7aFO1zT2nZA5bMZxR6ilEYo2P/05HERerrHfLEgRaiLH3peA2mLKWe39kq7ZcmRKO/G9fsoKUzPyzVaVaaEQxfp/bUryf2GZ5xz/qyGhCmbTVIxPxketA46i6RCqdL6w1rSDRAfcN3Drcv44vmuJbk1UbCl8sFQ8W9h1G9gowN9b+Eh058x2XNgvOgfsKKnDRdV0mww3dNDoHqv4+1DHxGLPuUUH49PW4DTr+C+wJ3o6rL757cwszlxovE53EqOV8vnktBEdQaEGWMpr67LEmvbCsDkV43vJbtBsZgQCQGVnUjdqx7NgrckPhrFeWBovwjqd3YGZDbg2z553PogGzVBSNzA1Ie66mrkFgeMfFSrrpc/O+CehGW+UYNRRndFfbY5kwXAstHkxKot8mcNZKURuoZrSrISdLlJJJw+5BOhQa+ITciqhftwnOy/By8r4rhZn8Wwg9e+zWaDdHXMypKlxaK7/cMo1rNhdq/T9GxWgIUywUuPmTVqfKS9jA6bDix28XXN7JN9yg/iYf3/Viff3d8FfEaoCCxRIZjcjje6VxIMVsNmiLD0KJUS03ORpKhj7fkRRUDlwwehpsN8j/grB9yg8lgz2Jp94wbw/2pOsOW3qNynXKwif6Kg2XMwAIQgoxIm445+ChxP3EwVtQoFktkq4CtisiL6FLRzbFV87nowRoDQgM","tag":"c09ac8402df7490efa10f95d5a219356"};
+        const m=e.meta,secret=process.env.ASSEMBLYAI_API_KEY?.trim();
+        const out='/tmp/recount-startup-evidence',source='/tmp/recount-startup-source';
+        fs.mkdirSync(out,{recursive:true});fs.mkdirSync(source,{recursive:true});
+        if(process.env.GITHUB_REPOSITORY!==m.repository||Date.now()>=Date.parse(m.expires_at)||!secret||execFileSync('git',['rev-parse','HEAD']).toString().trim()!==m.source_commit)throw Error('Deployment authorization unavailable or expired');
+        const key=hkdfSync('sha256',Buffer.from(secret),Buffer.from(e.salt,'hex'),Buffer.from('Recount deploy envelope v1'),32);
+        const d=createDecipheriv('aes-256-gcm',key,Buffer.from(e.iv,'hex'));d.setAAD(Buffer.from(JSON.stringify(m)));d.setAuthTag(Buffer.from(e.tag,'hex'));
+        let cap;try{cap=JSON.parse(Buffer.concat([d.update(Buffer.from(e.ciphertext,'base64')),d.final()]).toString());}catch{throw Error('Deployment authorization unavailable');}
+        if(!cap.proxy.startsWith('https://netlify-mcp.netlify.app/proxy/')||/\s/.test(cap.proxy)||typeof cap.access_code!=='string')throw Error('Unexpected deployment capability');
+        for(const value of [secret,cap.proxy,cap.proxy.split('/').at(-1),cap.access_code])console.log('::add-mask::'+value);
+        const env={...process.env,CI:'true',NPM_CONFIG_LOGLEVEL:'error'};delete env.ASSEMBLYAI_API_KEY;delete env.GITHUB_TOKEN;
+        const archive=execFileSync('git',['archive','HEAD'],{maxBuffer:16*1024*1024});
+        execFileSync('tar',['-x','-C',source],{input:archive});
+        let output='',exit=0;
+        try{output=execFileSync('npx',['-y','@netlify/mcp@latest','--site-id',m.site_id,'--proxy-path',cap.proxy],{cwd:source,env,timeout:360000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']}).toString();}
+        catch(err){exit=err.status??1;output=String(err.stdout??'')+'\n'+String(err.stderr??'');}
+        for(const value of [secret,cap.proxy,cap.proxy.split('/').at(-1),cap.access_code])output=output.split(value).join('[REDACTED]');
+        output=output.replace(/https:\/\/netlify-mcp\.netlify\.app\/proxy\/[^\s"'<>]+/g,'[REDACTED]').replace(/\x1b\[[0-9;]*m/g,'');
+        fs.writeFileSync(out+'/deploy.log',output.slice(-24000));
+        fs.writeFileSync(out+'/UPLOAD.json',JSON.stringify({site_id:m.site_id,source_commit:m.source_commit,helper_exit:exit},null,2));
+        console.log(JSON.stringify({helper_exit:exit,source_commit:m.source_commit}));
+        if(exit)throw Error('Deployment helper failed; see sanitized log');
+        const base='https://recount-voice.netlify.app',pause=ms=>new Promise(r=>setTimeout(r,ms));
+        const files=fs.readdirSync('web',{recursive:true}).filter(p=>fs.statSync('web/'+p).isFile()&&!['_headers','_redirects','.gitkeep'].includes(p));
+        let rows=[];
+        for(let attempt=0;attempt<4;attempt++){
+          rows=[];
+          for(let i=0;i<files.length;i+=6){
+            rows.push(...await Promise.all(files.slice(i,i+6).map(async p=>{
+              const path=p==='index.html'?'/':'/'+p;
+              try{
+                const r=await fetch(base+path,{headers:{'Cache-Control':'no-cache'},signal:AbortSignal.timeout(20000)});
+                const b=Buffer.from(await r.arrayBuffer());
+                return {path,http_status:r.status,matches:r.ok&&b.equals(fs.readFileSync('web/'+p)),sha256:createHash('sha256').update(b).digest('hex')};
+              }catch{return {path,matches:false,network_error:true};}
+            })));
+          }
+          if(rows.every(x=>x.matches))break;
+          await pause(2500);
+        }
+        const unauthorized=await fetch(base+'/api/token',{method:'POST',headers:{'Content-Type':'application/json','Origin':base},body:'{"consent":false}',signal:AbortSignal.timeout(15000)});
+        const receipt={status:rows.every(x=>x.matches)&&unauthorized.status===403?'passed':'failed',source_commit:m.source_commit,site:base,asset_count:rows.length,assets:rows,unauthorized_token_status:unauthorized.status};
+        fs.writeFileSync(out+'/ASSET_RECEIPT.json',JSON.stringify(receipt,null,2));
+        console.log(JSON.stringify({asset_check:receipt.status,asset_count:rows.length,unauthorized_token_status:unauthorized.status}));
+        if(receipt.status!=='passed')throw Error('Live asset or authorization verification failed');
+        async function probe(label,maxSilence){
+          const r={label,max_turn_silence:maxSilence,begin:false,termination:false,audio_bytes:0,events:[],scope:'Synthetic silence only. No human recording or transcription accuracy claim.'};
+          try{
+            const cfgResponse=await fetch(base+'/api/config',{cache:'no-store',signal:AbortSignal.timeout(15000)});
+            r.config_http_status=cfgResponse.status;
+            const cfg=await cfgResponse.json();
+            r.voice_enabled=cfg.voice_enabled===true;r.requires_access_code=cfg.requires_access_code===true;
+            const cookie=cfgResponse.headers.getSetCookie().map(x=>x.split(';')[0]).join('; ');
+            if(!cfgResponse.ok||!r.voice_enabled||!r.requires_access_code||!cookie||typeof cfg.csrf!=='string'){r.failure_stage='config';return r;}
+            const tokenResponse=await fetch(base+'/api/token',{method:'POST',headers:{'Content-Type':'application/json','Origin':base,'Cookie':cookie,'X-Recount-Token':cfg.csrf},body:JSON.stringify({consent:true,access_code:cap.access_code}),signal:AbortSignal.timeout(15000)});
+            r.token_http_status=tokenResponse.status;
+            const tokenData=await tokenResponse.json();
+            if(!tokenResponse.ok||typeof tokenData.token!=='string'){r.failure_stage='token';return r;}
+            const url=new URL(streamingURL({token:tokenData.token,sampleRate:16000,speechModel:tokenData.speech_model}));
+            url.searchParams.set('max_turn_silence',String(maxSilence));
+            await new Promise(resolve=>{
+              const ws=new WebSocket(url);let finished=false,interval,afterError;
+              const finish=()=>{if(finished)return;finished=true;clearTimeout(timeout);clearTimeout(afterError);clearInterval(interval);try{ws.close();}catch{}resolve();};
+              const timeout=setTimeout(()=>{r.timeout=true;finish();},18000);
+              ws.addEventListener('open',()=>r.events.push('socket_open'));
+              ws.addEventListener('error',()=>{r.events.push('socket_error');afterError=setTimeout(finish,1000);});
+              ws.addEventListener('close',event=>{r.close_code=event.code;r.clean_close=event.wasClean;finish();});
+              ws.addEventListener('message',event=>{
+                let msg;try{msg=JSON.parse(String(event.data));}catch{r.invalid_message=true;finish();return;}
+                if(msg.type==='Begin'&&!r.begin){
+                  r.begin=true;r.events.push('Begin');
+                  if(label==='old-400ms-control'){ws.send(JSON.stringify({type:'Terminate'}));return;}
+                  let sent=0;
+                  interval=setInterval(()=>{
+                    if(finished||ws.readyState!==WebSocket.OPEN){finish();return;}
+                    if(sent++<5){const pcm=new Uint8Array(3200);ws.send(pcm);r.audio_bytes+=pcm.length;}
+                    else{clearInterval(interval);ws.send(JSON.stringify({type:'Terminate'}));}
+                  },100);
+                }else if(msg.type==='Termination'){r.termination=true;r.events.push('Termination');finish();}
+                else if(msg.type==='Error'){r.events.push('Error');if(Number.isInteger(msg.error_code))r.provider_error_code=msg.error_code;finish();}
+                else if(msg.type==='Turn'){r.events.push('Turn');}
+              });
+            });
+          }catch{r.failure_stage=r.token_http_status===200?'websocket':'http';}
+          return r;
+        }
+        const probes=[await probe('old-400ms-control',400),await probe('deployed-640ms',640)];
+        const actual=probes[1];
+        const smoke={status:actual.begin&&actual.termination&&actual.audio_bytes===16000?'passed':'failed',source_commit:m.source_commit,site:base,probes,provider_token_requests:2,human_audio_cases:0,microphone_hardware_tested:false,scope:'Real production config/cookie/token and real provider WebSockets. Input is generated PCM silence, not speech.'};
+        fs.writeFileSync(out+'/LIVE_STARTUP_RECEIPT.json',JSON.stringify(smoke,null,2));console.log(JSON.stringify(smoke));
+        cap=null;
+        if(smoke.status!=='passed')throw Error('Real provider startup test failed; inspect allowlisted receipt');
+        JS
+    - name: Browser recovery and live bundled audio checks
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -m pip install -r requirements-dev.txt
+        python -m playwright install --with-deps chromium
+        RECOUNT_VOICE_TEST_OUT=/tmp/recount-startup-evidence/voice-recovery python tests/browser_voice_recovery.py
+        RECOUNT_AUDIO_BASE=https://recount-voice.netlify.app RECOUNT_AUDIO_OUT=/tmp/recount-startup-evidence/public-audio python tests/browser_bundled_audio.py
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: recount-startup-deployment
+        path: /tmp/recount-startup-evidence/
+        retention-days: 14
+        if-no-files-found: error
