@@ -1,0 +1,92 @@
+name: Recount production release
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['web/**', 'tests/**', 'server.py', 'delivery/verify-production.mjs', '.github/workflows/production-release.yml']
+  push:
+    branches: [master]
+    paths: ['web/**', 'tests/**', 'server.py', 'delivery/verify-production.mjs', '.github/workflows/production-release.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Source and browser regression gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/recount-release-tests
+          node --test tests/*.test.mjs > /tmp/recount-release-tests/node.log
+          python -m unittest discover -s tests -p 'test_*.py' -v > /tmp/recount-release-tests/http.log 2>&1
+          node --check delivery/verify-production.mjs
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          RECOUNT_STARTUP_OUT=/tmp/recount-release-tests/startup python tests/browser_startup_errors.py
+          RECOUNT_AUDIO_OUT=/tmp/recount-release-tests/audio python tests/browser_bundled_audio.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-release-regressions
+          path: /tmp/recount-release-tests/
+          retention-days: 14
+  publish:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: recount-production-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Require securely configured deployment credentials
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+        run: |
+          node --input-type=module <<'JS'
+          for(const name of ['NETLIFY_AUTH_TOKEN','RECOUNT_DEMO_PASS']){
+            if(!process.env[name] || process.env[name].length<8)throw Error('Missing repository Actions secret: '+name);
+          }
+          JS
+      - name: Install pinned deployment CLI
+        run: npm install --prefix /tmp/recount-deploy-cli netlify-cli@27.0.1 --no-audit --no-fund
+      - name: Deploy existing site with the existing judge code
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: df8d4f20-8294-4f70-820a-731fa440156b
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+          CI: 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          /tmp/recount-deploy-cli/node_modules/.bin/netlify env:set RECOUNT_DEMO_PASS "$RECOUNT_DEMO_PASS" --context production --scope functions --secret > /tmp/recount-env-private.log 2>&1
+          /tmp/recount-deploy-cli/node_modules/.bin/netlify deploy --prod --context production --site "$NETLIFY_SITE_ID" --skip-functions-cache --message "Verified Recount $GITHUB_SHA" --json > /tmp/recount-deploy-private.json
+      - name: Verify actual production authorization and provider transport
+        env:
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+          RECOUNT_RECEIPT: /tmp/recount-production-proof/Recount-Production-Receipt.json
+        run: node delivery/verify-production.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-production-proof
+          path: /tmp/recount-production-proof/
+          retention-days: 14
+          if-no-files-found: warn
