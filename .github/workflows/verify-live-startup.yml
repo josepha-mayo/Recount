@@ -1,0 +1,103 @@
+name: Independent Recount startup checks
+'on':
+  push:
+    branches: [master]
+    paths: [.github/workflows/verify-live-startup.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: e1e47d6b5969055382f96b671b9a53c62e267ce2
+        persist-credentials: false
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22.16.0'
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Preserve exact live HTML difference
+      run: |
+        mkdir -p /tmp/recount-independent
+        python - <<'PY'
+        import hashlib,json,difflib,urllib.request
+        from pathlib import Path
+        out=Path('/tmp/recount-independent');base='https://recount-voice.netlify.app'
+        expected=Path('web/index.html').read_bytes()
+        with urllib.request.urlopen(urllib.request.Request(base+'/',headers={'Cache-Control':'no-cache'}),timeout=20) as r:actual=r.read(500000)
+        (out/'expected-index.html').write_bytes(expected);(out/'live-index.html').write_bytes(actual)
+        diff=''.join(difflib.unified_diff(expected.decode().splitlines(True),actual.decode().splitlines(True),fromfile='tracked-index',tofile='live-index'))
+        (out/'index.diff').write_text(diff)
+        report={'exact_match':actual==expected,'expected_sha256':hashlib.sha256(expected).hexdigest(),'actual_sha256':hashlib.sha256(actual).hexdigest(),'source_commit':'e1e47d6b5969055382f96b671b9a53c62e267ce2'}
+        (out/'HTML_RECEIPT.json').write_text(json.dumps(report,indent=2));print(json.dumps(report))
+        PY
+    - name: Real provider request checks with synthetic silence only
+      env:
+        ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+      shell: bash
+      run: |
+        node --input-type=module <<'JS'
+        import fs from 'node:fs';
+        import {streamingURL} from './web/streaming-request.mjs';
+        const key=process.env.ASSEMBLYAI_API_KEY?.trim();
+        if(!key)throw Error('Provider test credential unavailable');
+        async function probe(maxSilence){
+          const r={max_turn_silence:maxSilence,begin:false,termination:false,audio_bytes:0,events:[]};
+          try{
+            const params=new URLSearchParams({expires_in_seconds:'60',max_session_duration_seconds:'60'});
+            const response=await fetch('https://streaming.assemblyai.com/v3/token?'+params,{headers:{Authorization:key},signal:AbortSignal.timeout(10000)});
+            r.token_http_status=response.status;
+            const data=await response.json();if(!response.ok||typeof data.token!=='string'){r.failure_stage='token';return r;}
+            const url=new URL(streamingURL({token:data.token,sampleRate:16000,speechModel:'universal-3-5-pro'}));
+            url.searchParams.set('max_turn_silence',String(maxSilence));
+            await new Promise(resolve=>{
+              const ws=new WebSocket(url);let done=false,interval,errorTimer;
+              const finish=()=>{if(done)return;done=true;clearTimeout(timer);clearTimeout(errorTimer);clearInterval(interval);try{ws.close();}catch{}resolve();};
+              const timer=setTimeout(()=>{r.timeout=true;finish();},18000);
+              ws.addEventListener('open',()=>r.events.push('socket_open'));
+              ws.addEventListener('error',()=>{r.events.push('socket_error');errorTimer=setTimeout(finish,1000);});
+              ws.addEventListener('close',event=>{r.close_code=event.code;r.was_clean=event.wasClean;r.close_mentions_silence=/max_turn_silence|min_turn_silence/.test(event.reason??'');finish();});
+              ws.addEventListener('message',event=>{
+                let msg;try{msg=JSON.parse(String(event.data));}catch{r.invalid_event=true;finish();return;}
+                if(msg.type==='Begin'&&!r.begin){
+                  r.begin=true;r.events.push('Begin');
+                  if(maxSilence===400){ws.send(JSON.stringify({type:'Terminate'}));return;}
+                  let sent=0;
+                  interval=setInterval(()=>{
+                    if(done||ws.readyState!==WebSocket.OPEN){finish();return;}
+                    if(sent++<5){ws.send(new Uint8Array(3200));r.audio_bytes+=3200;}
+                    else{clearInterval(interval);ws.send(JSON.stringify({type:'Terminate'}));}
+                  },100);
+                }else if(msg.type==='Termination'){r.termination=true;r.events.push('Termination');finish();}
+                else if(msg.type==='Error'){r.events.push('Error');if(Number.isInteger(msg.error_code))r.provider_error_code=msg.error_code;r.error_mentions_silence=/max_turn_silence|min_turn_silence/.test(String(msg.error??''));finish();}
+              });
+            });
+          }catch{r.failure_stage=r.token_http_status===200?'websocket':'token';}
+          return r;
+        }
+        const probes=[await probe(400),await probe(640)];
+        const current=probes[1];
+        const report={status:current.begin&&current.termination&&current.audio_bytes===16000?'passed':'failed',source_commit:'e1e47d6b5969055382f96b671b9a53c62e267ce2',probes,provider_token_requests:2,synthetic_audio_seconds:0.5,human_audio_cases:0,production_judge_token_path_tested:false,microphone_hardware_tested:false,scope:'Provider token and real WebSocket only; no human microphone or speech recognition accuracy claim.'};
+        fs.writeFileSync('/tmp/recount-independent/PROVIDER_RECEIPT.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+        if(report.status!=='passed')process.exitCode=1;
+        JS
+    - name: Browser recovery and live bundled audio checks
+      if: always()
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -m pip install -r requirements-dev.txt
+        python -m playwright install --with-deps chromium
+        RECOUNT_VOICE_TEST_OUT=/tmp/recount-independent/voice-recovery python tests/browser_voice_recovery.py
+        RECOUNT_AUDIO_BASE=https://recount-voice.netlify.app RECOUNT_AUDIO_OUT=/tmp/recount-independent/public-audio python tests/browser_bundled_audio.py
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: recount-independent-startup
+        path: /tmp/recount-independent/
+        retention-days: 14
+        if-no-files-found: error
