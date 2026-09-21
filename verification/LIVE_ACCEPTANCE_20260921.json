@@ -1,0 +1,38 @@
+{
+  "status": "passed",
+  "date": "2026-09-21",
+  "site": "https://recount-voice.netlify.app",
+  "application_source": "3ebb05fee80a17f8e031f5f8d1ea40a1b0c7b602",
+  "frontend_source": "d9841875a27c95dcb50d36c91728fdce9252ebfb",
+  "deploy_id": "6ab16590c8d1a808fe600807",
+  "deployment_run": "https://github.com/josepha-mayo/Recount/actions/runs/35630443331",
+  "voice_run": "https://github.com/josepha-mayo/Recount/actions/runs/35630591053",
+  "deployment_artifact_id": 10653408149,
+  "voice_artifact_id": 10653118646,
+  "regressions": {"application_tests": 219, "native_authorization_tests": 11, "http_tests": 8},
+  "production_authorization": {"config_http": 200, "invalid_code_http": 403, "valid_code_http": 200, "judge_code_changed": false},
+  "transport_probe": {"provider_begin": true, "provider_termination": true, "generated_pcm_bytes": 16000},
+  "live_browser": {
+    "status": "passed",
+    "elapsed_seconds": 53.892,
+    "input": "Kokoro af_heart generated test speech",
+    "http_or_asr_mocked": false,
+    "physical_microphone_tested": false,
+    "human_validation": false,
+    "speaker_acknowledgement": "Automated test control, not evidence of human hearing",
+    "provider_sessions": 1,
+    "final_transcripts": 4,
+    "completed_readbacks": 4,
+    "speech_output_errors": 0,
+    "sequence": [
+      {"input": "Rice twelve bags.", "result": "Rice 12 bags pending, zero confirmed rows"},
+      {"input": "No, thirteen bags.", "result": "Rice 13 bags pending, zero confirmed rows"},
+      {"input": "Confirm twelve.", "result": "Mismatched confirmation rejected, zero confirmed rows"},
+      {"input": "Confirm thirteen.", "result": "Exactly one confirmed Rice 13 bags row"}
+    ],
+    "exact_csv": "item,quantity,unit\nRice,13,bags\n",
+    "frontend_report_hashes_match": true
+  },
+  "scope": "Actual public browser/config/token/provider/readback/ledger/export. Only microphone input was generated. Screen capture is a recording of the automated run. No human microphone, accent reliability, physical stock correctness, customer productivity or completed competition submission is established.",
+  "historical_human_holdouts": "Both earlier frozen recordings remain failed. This synthetic test does not change those results."
+}
