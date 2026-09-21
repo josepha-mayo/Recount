@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
+import {normalizedHostedHTML} from './hosted-html.mjs';
 import {streamingURL} from '../web/streaming-request.mjs';
 export const BASE='https://recount-voice.netlify.app';
 const SAFE=new Set(['Invalid judge access code.','Refresh the page before starting voice mode.','Same-origin request required.','Voice mode is not configured on this deployment.','Judge deployment is not fully configured.','Provider token service rejected the request.','Provider token service is temporarily unavailable.']);
@@ -50,13 +51,18 @@ export async function probe(url,Socket=WebSocket,{intervalMs=100,timeoutMs=20000
   r.status=r.begin&&r.termination&&r.audio_bytes===16000&&!r.failure_stage?'passed':'failed';return r;
 }
 export async function verify({code,root=fileURLToPath(new URL('../web/',import.meta.url)),fetcher=fetch,Socket=WebSocket,probeOptions}={}){
-  const r={status:'failed',site:BASE,source_commit:process.env.GITHUB_SHA??null,checked_at:new Date().toISOString(),human_audio_cases:0,physical_microphone_tested:false,scope:'Production authorization, served source, and real provider transport with generated silence. Not human speech validation.'};
+  const r={status:'failed',site:BASE,source_commit:process.env.RECOUNT_SOURCE_COMMIT??process.env.GITHUB_SHA??null,checked_at:new Date().toISOString(),human_audio_cases:0,physical_microphone_tested:false,scope:'Production authorization, served source, and real provider transport with generated silence. HTML permits two exact recorded host-managed additions; raw hashes and byte equality are retained. Not human speech validation.'};
   if(typeof code!=='string'||code.length<8||code.length>128){r.failure_stage='missing_judge_secret';return r;}
   const names=['index.html','app.mjs','core.mjs','voice-runtime.mjs','capture-gate.mjs','voice-audit.mjs','startup-errors.mjs','streaming-request.mjs','audio-worklet.js','audio-readback.mjs','readback.mjs','speaker-check.mjs','style.css','voice/v1/manifest.json'];
   r.assets=[];
   for(const name of names){
-    try{const res=await fetcher(BASE+(name==='index.html'?'/':'/'+name),{cache:'no-store',redirect:'error',signal:AbortSignal.timeout(15000)});const data=Buffer.from(await res.arrayBuffer());r.assets.push({path:name,matches:res.ok&&data.equals(fs.readFileSync(path.join(root,name))),sha256:createHash('sha256').update(data).digest('hex')});}
-    catch{r.assets.push({path:name,matches:false});}
+    try{
+      const res=await fetcher(BASE+(name==='index.html'?'/':'/'+name),{cache:'no-store',redirect:'error',signal:AbortSignal.timeout(15000)});
+      const data=Buffer.from(await res.arrayBuffer());
+      const expected=fs.readFileSync(path.join(root,name));
+      const normalized=name==='index.html'?normalizedHostedHTML(data.toString()):null;
+      r.assets.push({path:name,matches:res.ok&&(data.equals(expected)||Boolean(normalized&&normalized.html===expected.toString())),byte_exact:data.equals(expected),host_normalizations:normalized?.removed??[],sha256:createHash('sha256').update(data).digest('hex')});
+    }catch{r.assets.push({path:name,matches:false});}
   }
   if(r.assets.some(x=>!x.matches)){r.failure_stage='served_source_mismatch';return r;}
   const invalid=code==='synthetic-invalid-control'?'synthetic-other-control':'synthetic-invalid-control';
