@@ -35,7 +35,7 @@ jobs:
           git archive HEAD > /tmp/recount-native/source.tar
       - name: Install pinned deployment CLI
         run: npm install --prefix /tmp/recount-native-cli netlify-cli@27.0.1 --no-audit --no-fund
-      - name: Publish tested functions without changing the judge code
+      - name: Inspect metadata and explicitly bind the unchanged judge code to this deployment
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
@@ -44,12 +44,17 @@ jobs:
         run: |
           node --input-type=module <<'JS'
           import fs from 'node:fs';import {execFileSync} from 'node:child_process';
-          const report={source_commit:'9b9630aba255ab5f93ee0fe551b6e0718320960a',status:'failed'};
+          const report={source_commit:'9b9630aba255ab5f93ee0fe551b6e0718320960a',status:'failed',judge_code_changed:false};
           const secrets=[process.env.NETLIFY_AUTH_TOKEN,process.env.RECOUNT_DEMO_PASS].filter(Boolean);
           const clean=x=>{let s=String(x??'');for(const v of secrets)s=s.split(v).join('[REDACTED]');return s.replace(/\x1b\[[0-9;]*m/g,'').slice(-6000);};
           try{
+            const headers={Authorization:'Bearer '+process.env.NETLIFY_AUTH_TOKEN};
+            const s=await fetch('https://api.netlify.com/api/v1/sites/'+process.env.NETLIFY_SITE_ID,{headers,signal:AbortSignal.timeout(15000)});const site=await s.json();
+            const q=await fetch('https://api.netlify.com/api/v1/accounts/'+site.account_id+'/env?site_id='+process.env.NETLIFY_SITE_ID,{headers,signal:AbortSignal.timeout(15000)});
+            report.environment_metadata_http=q.status;
+            if(q.ok){const vars=await q.json();report.settings=vars.filter(v=>['RECOUNT_DEMO_PASS','RECOUNT_SIGNING_SECRET','ASSEMBLYAI_API_KEY','RECOUNT_ALLOWED_ORIGIN'].includes(v.key)).map(v=>({key:v.key,scopes:v.scopes,is_secret:v.is_secret,contexts:(v.values??[]).map(x=>({context:x.context,value_present:typeof x.value==='string'&&x.value.length>0}))}));}
             const env={...process.env};delete env.RECOUNT_DEMO_PASS;
-            const text=execFileSync('/tmp/recount-native-cli/node_modules/.bin/netlify',['deploy','--prod','--context','production','--site',process.env.NETLIFY_SITE_ID,'--skip-functions-cache','--message','Recount native function environment fix 9b9630a','--json'],{env,timeout:360000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']}).toString();
+            const text=execFileSync('/tmp/recount-native-cli/node_modules/.bin/netlify',['deploy','--prod','--context','production','--site',process.env.NETLIFY_SITE_ID,'--skip-functions-cache','--secret-env','RECOUNT_DEMO_PASS='+process.env.RECOUNT_DEMO_PASS,'--message','Recount explicit judge secret binding 9b9630a','--json'],{env,timeout:360000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']}).toString();
             const data=JSON.parse(text);report.deploy_id=data.deploy_id??data.id??null;report.status='deployed';
           }catch(e){report.exit_code=e.status??null;report.error=clean(String(e.stdout??'')+'\n'+String(e.stderr??''));}
           fs.writeFileSync('/tmp/recount-native/DEPLOY.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
@@ -72,7 +77,7 @@ jobs:
           OMP_NUM_THREADS: '2'
         run: |
           python - <<'PY'
-          import hashlib,json,tempfile,urllib.request,wave
+          import hashlib,json,urllib.request,wave
           from pathlib import Path
           import numpy as np
           from kokoro_onnx import Kokoro
