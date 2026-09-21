@@ -1,0 +1,112 @@
+name: Native Recount release and live voice
+on:
+  push:
+    branches: [master]
+    paths: [.github/workflows/release-native-functions-20260921.yml]
+permissions:
+  contents: read
+concurrency:
+  group: recount-production-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 9b9630aba255ab5f93ee0fe551b6e0718320960a
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify application and both server environment contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/recount-native
+          node --test tests/*.test.mjs > /tmp/recount-native/node.log
+          node --experimental-strip-types --test diagnostics/functions-env.test.mjs > /tmp/recount-native/functions-env.log 2>&1
+          python -m unittest discover -s tests -p 'test_*.py' -v > /tmp/recount-native/http.log 2>&1
+          python -m py_compile diagnostics/browser_live_voice.py
+          git archive HEAD > /tmp/recount-native/source.tar
+      - name: Install pinned deployment CLI
+        run: npm install --prefix /tmp/recount-native-cli netlify-cli@27.0.1 --no-audit --no-fund
+      - name: Publish tested functions without changing the judge code
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+          NETLIFY_SITE_ID: df8d4f20-8294-4f70-820a-731fa440156b
+          CI: 'true'
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';import {execFileSync} from 'node:child_process';
+          const report={source_commit:'9b9630aba255ab5f93ee0fe551b6e0718320960a',status:'failed'};
+          const secrets=[process.env.NETLIFY_AUTH_TOKEN,process.env.RECOUNT_DEMO_PASS].filter(Boolean);
+          const clean=x=>{let s=String(x??'');for(const v of secrets)s=s.split(v).join('[REDACTED]');return s.replace(/\x1b\[[0-9;]*m/g,'').slice(-6000);};
+          try{
+            const env={...process.env};delete env.RECOUNT_DEMO_PASS;
+            const text=execFileSync('/tmp/recount-native-cli/node_modules/.bin/netlify',['deploy','--prod','--context','production','--site',process.env.NETLIFY_SITE_ID,'--skip-functions-cache','--message','Recount native function environment fix 9b9630a','--json'],{env,timeout:360000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']}).toString();
+            const data=JSON.parse(text);report.deploy_id=data.deploy_id??data.id??null;report.status='deployed';
+          }catch(e){report.exit_code=e.status??null;report.error=clean(String(e.stdout??'')+'\n'+String(e.stderr??''));}
+          fs.writeFileSync('/tmp/recount-native/DEPLOY.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+          if(report.status!=='deployed')process.exitCode=1;
+          JS
+      - name: Require real production authorization and provider transport
+        env:
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+          RECOUNT_RECEIPT: /tmp/recount-native/PRODUCTION.json
+          RECOUNT_SOURCE_COMMIT: 9b9630aba255ab5f93ee0fe551b6e0718320960a
+        run: node delivery/verify-production.mjs
+      - name: Install browser and stock speech fixture generator
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg espeak-ng
+          python -m pip install -r requirements-dev.txt kokoro-onnx==0.4.9 numpy==2.2.6 onnxruntime==1.22.1 soundfile==0.13.1
+          python -m playwright install --with-deps chromium
+      - name: Generate four fixed stock-voice inputs, not a human recording
+        env:
+          OMP_NUM_THREADS: '2'
+        run: |
+          python - <<'PY'
+          import hashlib,json,tempfile,urllib.request,wave
+          from pathlib import Path
+          import numpy as np
+          from kokoro_onnx import Kokoro
+          root=Path('/tmp/recount-voice-input');root.mkdir(exist_ok=True)
+          models=Path('/tmp/recount-kokoro');models.mkdir(exist_ok=True)
+          expected={'kokoro-v1.0.onnx':'7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5','voices-v1.0.bin':'bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d'}
+          for name,digest in expected.items():
+              target=models/name
+              urllib.request.urlretrieve('https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/'+name,target)
+              assert hashlib.sha256(target.read_bytes()).hexdigest()==digest
+          model=Kokoro(str(models/'kokoro-v1.0.onnx'),str(models/'voices-v1.0.bin'))
+          rows=[]
+          for name,text in [('count','Rice twelve bags.'),('correction','No, thirteen bags.'),('wrong-confirm','Confirm twelve.'),('confirm','Confirm thirteen.')]:
+              audio,sr=model.create(text,voice='af_heart',speed=.95,lang='en-us');audio=np.asarray(audio,dtype=np.float32)
+              assert np.isfinite(audio).all() and sr==24000
+              with wave.open(str(root/(name+'.wav')),'wb') as f:
+                  f.setnchannels(1);f.setsampwidth(2);f.setframerate(sr);f.writeframes((np.clip(audio,-1,1)*32767).astype('<i2').tobytes())
+              rows.append({'name':name,'text':text,'seconds':len(audio)/sr,'sha256':hashlib.sha256((root/(name+'.wav')).read_bytes()).hexdigest()})
+          (root/'MANIFEST.json').write_text(json.dumps({'input':'Kokoro af_heart stock neural synthesis','human_recording':False,'model_hashes':expected,'clips':rows},indent=2))
+          PY
+      - name: Actual production browser, token, recognition, read-back and CSV
+        env:
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+          RECOUNT_LIVE_OUT: /tmp/recount-native/live-voice
+          RECOUNT_LIVE_INPUT: /tmp/recount-voice-input
+        run: python diagnostics/browser_live_voice.py
+      - name: Retain generated audio and browser regression evidence
+        if: always()
+        run: |
+          if test -d /tmp/recount-voice-input; then cp -r /tmp/recount-voice-input /tmp/recount-native/input; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-native-release-20260921
+          path: /tmp/recount-native/
+          retention-days: 14
+          if-no-files-found: error
