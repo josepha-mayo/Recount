@@ -1,3 +1,4 @@
+import { judgeConfigured } from '../lib/judge-auth.mts';
 import { createHmac, randomBytes } from 'node:crypto';
 
 function env(name: string): string {
@@ -23,7 +24,7 @@ export default async (req: Request) => {
   if (req.method !== 'GET') return json(405, { error: 'GET required' }, { Allow: 'GET' });
   const signing = env('RECOUNT_SIGNING_SECRET');
   const access = env('RECOUNT_DEMO_PASS');
-  if (signing.length < 24 || access.length < 8) return json(503, { error: 'Judge deployment is not fully configured.' });
+  if (signing.length < 24 || !judgeConfigured(access)) return json(503, { error: 'Judge deployment is not fully configured.' });
 
   const nonce = randomBytes(18).toString('base64url');
   const csrf = createHmac('sha256', signing).update(nonce).digest('base64url');
