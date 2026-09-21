@@ -1,14 +1,6 @@
-# Recount: current submission draft
+# Recount: submission copy, 21 September 2026
 
-**Team exists. Project is not submitted.** This draft describes the deployed recovery release, not just the earlier synthetic-voice demonstration. The public team page was read again on 18 September 2026 and still stated that no submission had been made.
-
-## Links
-
-- Team: https://lablab.ai/ai-hackathons/assemblyai-voice-agent-hackathon/recount
-- Source: https://github.com/josepha-mayo/Recount
-- Application: https://recount-voice.netlify.app/
-- Deployed-release receipt: [verification/INTERACTIVE_RECOVERY_RELEASE_20260918.json](verification/INTERACTIVE_RECOVERY_RELEASE_20260918.json)
-- New public screenshot and narration build: https://github.com/josepha-mayo/Recount/actions/runs/35388255349
+The live authorization failure is fixed and a complete generated-speech interaction passes on the public application. Submission files are prepared separately in the conversation. This is not a claim that the final LabLab form has been submitted or that human microphone validation has passed.
 
 ## Title
 
@@ -16,42 +8,66 @@ Recount: Correction-Aware Voice Stocktaking
 
 ## Short description
 
-A voice stocktaking prototype with correction-aware drafts, quantity-echo confirmation and a separate Needs review tray. Recover unfinished counts without silently saving them; export only confirmed stock.
+A voice stocktaking prototype that keeps corrections on one draft, reads back the quantity, and saves only after explicit confirmation. Uncertain counts stay available for review; confirmed stock exports to CSV.
 
-## Description
+## Long description
 
-A stock count is more than a transcript. “Twelve, no, thirteen” should update one pending count, not create two inventory movements. An unclear confirmation should not destroy otherwise useful work or freeze the rest of the stocktake.
+### A count is more than a transcript
 
-Recount uses AssemblyAI streaming transcription with a deterministic, revision-aware count ledger. It asks for explicit units, keeps corrections attached to their draft and requires an exact quantity echo for spoken confirmation. An operator can also inspect the visual read-back and explicitly confirm it. Unsupported pack conversions and vague confirmations do not silently become stock records.
+“Twelve, no, thirteen” should update one pending count, not create two inventory movements. Recount explores a hands-busy stocktaking workflow in which corrections remain attached to the item being counted and confirmation refers to the current quantity.
 
-The recovery release adds a Needs review tray. Moving to another named item parks an unfinished draft rather than discarding it or treating it as stock. Resuming it is a separate action, followed by review and confirmation. Confirmed records can be downloaded as CSV; a versioned session export preserves the action history for reopening.
+### How Recount works
 
-The microphone is muted during the local spoken read-back. A timeout or speech-output error cancels speech and holds the session for review instead of resuming capture while the application is still talking. Browser tests exercise these transitions with simulated speech events. They are not a replacement for human speech validation.
+AssemblyAI streaming transcription supplies finalized speech turns. Recount's revision-aware ledger keeps the item, quantity and unit explicit. Corrections replace the pending quantity. Spoken confirmation must echo that quantity: “confirm thirteen” can save a draft of thirteen; “confirm twelve” cannot. A generic yes is not permission to write stock.
 
-The application is an independent Netlify project, with server-side provider credentials and short-lived streaming tokens. The catalogue currently contains four illustrative items. Recount does not place orders, make payments, message suppliers or modify a shop's production inventory.
+A bundled neural voice reads back the draft. Microphone capture pauses during the reply and resumes in the same provider session. Unfinished drafts can be parked in a separate Needs review tray. They do not enter the stock sheet until reviewed and confirmed. Confirmed counts export as CSV, and a versioned session file preserves local actions for reopening.
 
-## Evidence and limits
+The application uses a constrained command grammar, not a general-purpose dialogue model. Unsupported unit conversions are refused rather than guessed. Connection loss and ambiguous instructions hold work for review rather than silently confirming it.
 
-Two frozen, one-speaker human recording replays failed: each produced zero of four expected final counts and zero saves. They remain recorded failures. Zero writes alone is not proof of a useful or reliably safe product. Reuse of exposed recordings for recovery development is not held-out evidence, and unconfirmed review drafts are not completed counts.
+### What the current demonstration establishes
 
-Earlier authored synthetic-speech runs demonstrated actual AssemblyAI integration, including quantity correction and confirmation. They belong to earlier revisions and do not establish that the current release passes a human task.
+On 21 September, an automated browser used the public deployment and real AssemblyAI calls to stage Rice 12 bags, correct the same draft to 13, reject “confirm twelve,” and save exactly one Rice / 13 / bags row after “confirm thirteen.” The downloaded CSV was checked exactly. The test also exercised a rejected access code followed by an accepted-code retry. Four finalized turns and four completed read-backs occurred in one provider session.
 
-The current release receipt identifies application commit `b82c262cd962415721c5654541ec5c82bc49223b` and Netlify deploy `6aad870e4dae12c26dae08e9`. Its checks comprise 146 code tests, eight HTTP tests, 32 standard browser checks, 13 interactive-recovery browser checks using mocked provider/speech events, and 20 actual public-site checks. Nine deployed assets matched their expected source bytes. These different checks are not independent human trials and must not be relabelled as recognition accuracy.
+Only microphone input was generated using a stock neural voice. HTTP responses, recognition events, confidence values, read-back playback, ledger transitions and export were not mocked. A second successful run supplies the current recorded footage. Its narrated walkthrough combines explanatory slides with cropped real-time footage. The soundtrack is added stock narration, not the original browser audio or the builder's voice.
 
-A later media capture exercised nine asserted public-site behaviors using typed commands and checked actual CSV/session downloads. It made no provider audio calls and uploaded no human recording.
+### Scope and next validation
+
+Recount is a prototype with four illustrative catalogue items. It does not place orders, make payments or write to a shop's production inventory. Two earlier frozen human recording tests failed and remain documented. The new generated-input integration does not establish physical-microphone reliability, accent-wide recognition accuracy or customer productivity. Interactive human use, noisy environments and time to a correct count remain the next validation tasks.
+
+Built solo by Joseph Ayanda.
+
+## Technology and suggested category tags
+
+Technology: AssemblyAI, Streaming Speech-to-Text, JavaScript, TypeScript, Web Audio, AudioWorklet, Netlify Functions, Kokoro, Playwright.
+
+Suggested categories: Voice AI, Inventory, Productivity, Retail Operations. Use matching options actually offered by the submission form.
+
+Platform: Web application.
+
+## Links
+
+- Application: https://recount-voice.netlify.app/
+- Source: https://github.com/josepha-mayo/Recount
+- Existing team: https://lablab.ai/ai-hackathons/assemblyai-voice-agent-hackathon/recount
+- Current acceptance receipt: [verification/LIVE_ACCEPTANCE_20260921.json](verification/LIVE_ACCEPTANCE_20260921.json)
+- Deployment and actual authorization: https://github.com/josepha-mayo/Recount/actions/runs/35630443331
+- Initial live voice acceptance: https://github.com/josepha-mayo/Recount/actions/runs/35630591053
+- Second capture and stock narration: https://github.com/josepha-mayo/Recount/actions/runs/35631975985
 
 ## Current media
 
-`Recount-Recovery-Presentation.pdf` and its editable PowerPoint describe the deployed recovery workflow, its failure handling, and the two failed human recording tests. The accompanying `Recount-Recovery-Walkthrough.mp4` is a narrated slide walkthrough built from real public-site screenshots and typed-input actions. Narration uses a stock neural voice. It is **not** a real-time screen recording, a new microphone test or a human validation result.
+The September 21 package contains `Recount-Cover.jpg`, `Recount-Presentation.pdf`, editable `Recount-Presentation.pptx`, `Recount-Walkthrough.mp4`, captions and supporting evidence. These files replace older recovery-only media. The walkthrough explicitly identifies generated test input and added stock narration. An unedited browser recording and the exact CSV are retained in the package's evidence folder.
 
-The older `Recount-Standalone-Narrated-Demo.mp4` remains historical provider-integration media using synthetic input. Do not silently present it as a demonstration of the new recovery release. Current assets are provided in the conversation; no LabLab upload or public YouTube watch URL is asserted here.
+The current slide deck describes the deployed correction/confirmation workflow and the verified integration, while retaining the two failed human holdouts. The video is a presentation of observed integration behavior, not a new human trial. No public video-host watch URL or completed media upload is asserted.
 
-## Remaining path
+## Private judge handling
 
-1. Validate the current deployed microphone/read-back interaction in a genuine interactive session. Keep automatic voice completion, operator-assisted completion, wrong writes and unresolved items separate. Do not consume another unseen recording merely to tune known failures.
-2. Finalize a current-release voice demonstration and accurate submission assets from what that session actually establishes.
-3. Complete the existing LabLab team's form and asset uploads. Do not create another team or describe team creation as submission.
-4. Supply the judge code only in a field explicitly private to judges; never publish it in screenshots, source or descriptions.
-5. Read back the actual final submission confirmation.
+Text/review mode is open. Voice requires the existing private judge code and explicit microphone consent. Supply the code only through a field explicitly private to judges or an organizer-approved private channel. Never put the code in public descriptions, screenshots, source or recordings.
 
-Runtime variables are already configured on the independent site. This work does not require recreating the repository, setting up another account, or copying provider keys into chat. Automatic Git-to-Netlify linkage remains separate from the verified direct deployment.
+The sample interaction is Rice twelve bags, a correction to thirteen, deliberately wrong confirmation of twelve, then confirmation of thirteen. Wait for each read-back before continuing. The fixed deployment uses the same code previously supplied privately; no additional credential setup or rotation is required.
+
+## Remaining submission checks
+
+Review the files; check the actual form's media and field limits; complete the existing team's form and required uploads; provide judge access privately; and read back the final submission confirmation. Neither a prepared asset bundle, green test run nor team creation is a final submission receipt. Interactive physical-device human acceptance remains unverified.
+
+The older September 20 credential-setup blockers are superseded by the passing September 21 deployment and live receipts above. Historical failed attempts and human results are preserved, not reclassified.
