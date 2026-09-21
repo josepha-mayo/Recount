@@ -1,0 +1,66 @@
+name: Inspect authorized Recount production
+on:
+  push:
+    branches: [master]
+    paths: [.github/workflows/verify-authorized-20260921.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d9841875a27c95dcb50d36c91728fdce9252ebfb
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Preserve observed HTML and its exact differences
+        run: |
+          mkdir -p /tmp/recount-live-inspection
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          for(const [label,url,headers] of [['node','https://recount-voice.netlify.app/',{}],['node-identity','https://recount-voice.netlify.app/?verify=20260921',{'Accept-Encoding':'identity','Cache-Control':'no-cache'}]]){
+            const r=await fetch(url,{headers,signal:AbortSignal.timeout(15000)});fs.writeFileSync('/tmp/recount-live-inspection/'+label+'.html',await r.text());console.log(label,r.status);
+          }
+          JS
+          python - <<'PY'
+          import urllib.request,json,hashlib,difflib
+          from pathlib import Path
+          out=Path('/tmp/recount-live-inspection');expected=Path('web/index.html').read_bytes()
+          with urllib.request.urlopen(urllib.request.Request('https://recount-voice.netlify.app/',headers={'Cache-Control':'no-cache'}),timeout=15) as r: actual=r.read(500000)
+          (out/'python.html').write_bytes(actual)
+          rows=[]
+          for p in out.glob('*.html'):
+              b=p.read_bytes();rows.append({'client':p.stem,'matches':b==expected,'sha256':hashlib.sha256(b).hexdigest()})
+              (out/(p.stem+'.diff')).write_text(''.join(difflib.unified_diff(expected.decode().splitlines(True),b.decode().splitlines(True),fromfile='tracked',tofile=p.name)))
+          (out/'HTML.json').write_text(json.dumps(rows,indent=2));print(json.dumps(rows))
+          PY
+      - name: Real public judge-code and provider checks, without modifying configuration
+        env:
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';import {authorize,probe,verify} from './delivery/verify-production.mjs';import {streamingURL} from './web/streaming-request.mjs';
+          const out='/tmp/recount-live-inspection';
+          const code=process.env.RECOUNT_DEMO_PASS;if(!code)throw Error('Judge secret missing');
+          const bad=(await authorize('synthetic-invalid-control')).result;
+          const auth=await authorize(code);
+          const r={source_commit:'d9841875a27c95dcb50d36c91728fdce9252ebfb',rejected_control:bad,authorization:auth.result,status:'failed',human_audio_cases:0};
+          if(auth.result.token_present)r.provider=await probe(streamingURL({token:auth.token,sampleRate:16000,speechModel:auth.speechModel}));
+          if(bad.token_http_status===403&&bad.error==='Invalid judge access code.'&&auth.result.token_present&&r.provider?.status==='passed')r.status='passed';
+          fs.writeFileSync(out+'/AUTHORIZATION.json',JSON.stringify(r,null,2));console.log(JSON.stringify(r));
+          const strict=await verify({code});strict.source_commit=r.source_commit;fs.writeFileSync(out+'/STRICT.json',JSON.stringify(strict,null,2));
+          if(r.status!=='passed')process.exitCode=1;
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-live-inspection-20260921
+          path: /tmp/recount-live-inspection/
+          retention-days: 14
