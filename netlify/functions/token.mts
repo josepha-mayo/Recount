@@ -1,8 +1,10 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 function env(name: string): string {
-  const value = (globalThis as any).Netlify?.env?.get(name);
-  return typeof value === 'string' ? value : '';
+  // Native Netlify Functions expose process.env. Support either runtime accessor.
+  const store = (globalThis as any).Netlify?.env;
+  const value = typeof store?.get === 'function' ? store.get(name) : undefined;
+  return typeof value === 'string' && value.length > 0 ? value : (process.env[name] ?? '');
 }
 
 function json(status: number, value: unknown, extra: Record<string,string> = {}) {
