@@ -1,0 +1,38 @@
+{
+  "checked_at_date": "2026-09-21",
+  "run_id": 35643893413,
+  "run_url": "https://github.com/josepha-mayo/Recount/actions/runs/35643893413",
+  "artifact_id": 10659550661,
+  "status": "passed",
+  "application_source": "3ebb05fee80a17f8e031f5f8d1ea40a1b0c7b602",
+  "frontend_source": "d9841875a27c95dcb50d36c91728fdce9252ebfb",
+  "site": "https://recount-voice.netlify.app",
+  "elapsed_seconds": 57.353,
+  "token_http_statuses": [403, 200],
+  "rejected_code_control": "passed",
+  "existing_code_retry": "passed",
+  "sequence": [
+    "Rice twelve bags: pending 12, zero saved rows",
+    "No, thirteen bags: same pending draft becomes 13, zero saved rows",
+    "Confirm twelve: mismatch rejected, zero saved rows",
+    "Confirm thirteen: exactly one Rice / 13 / bags row saved"
+  ],
+  "exact_csv": "item,quantity,unit\nRice,13,bags\n",
+  "provider_sessions": 1,
+  "final_transcripts": 4,
+  "completed_readbacks": 4,
+  "speech_output_errors": 0,
+  "http_or_asr_mocked": false,
+  "generated_microphone_input": "Kokoro af_heart stock voice",
+  "human_validation": false,
+  "physical_microphone_tested": false,
+  "speaker_acknowledgement": "Automated test control, not evidence of human hearing",
+  "application_or_deployment_changed_for_recheck": false,
+  "judge_code_changed": false,
+  "prior_failed_check": {
+    "run_id": 35639815916,
+    "failure_stage": "production_authorization",
+    "exact_cause": "Not established; original failure is preserved. The later browser check succeeded without application, deployment or credential changes."
+  },
+  "submission_review": "The disclosed prototype demonstration clears the fresh live-browser check. This is not production-readiness or broad human-speech validation. LabLab draft/media/final submission are separate and not established by this receipt."
+}
