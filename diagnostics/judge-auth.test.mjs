@@ -1,0 +1,11 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {codeDigest,judgeConfigured,judgeMatches} from '../netlify/lib/judge-auth.mts';
+const pass='synthetic-strong-random-like-code',digest=codeDigest(pass);
+test('unconfigured deployment cannot accept a code',()=>{assert.equal(judgeConfigured('',''),false);assert.equal(judgeMatches(pass,'',''),false);});
+test('compiled verifier accepts only the original code without raw environment storage',()=>{assert.equal(judgeConfigured('',digest),true);assert.equal(judgeMatches(pass,'',digest),true);assert.equal(judgeMatches('different-code','',digest),false);});
+test('digest itself is not a bearer credential',()=>assert.equal(judgeMatches(digest,'',digest),false));
+test('empty and malformed verifiers cannot enable open access',()=>{for(const value of ['', 'x'.repeat(64),'abc']){assert.equal(judgeConfigured('',value),false);assert.equal(judgeMatches(pass,'',value),false);}});
+test('missing and oversized candidate values are refused',()=>{for(const value of [null,undefined,1,{},'', 'x'.repeat(129)])assert.equal(judgeMatches(value,'',digest),false);});
+test('legacy private environment remains supported',()=>{assert.equal(judgeMatches(pass,pass,''),true);assert.equal(judgeMatches('wrong-code',pass,''),false);});
+test('authorized deployment verifier takes precedence over a stale legacy setting',()=>{assert.equal(judgeMatches(pass,'stale-code',digest),true);assert.equal(judgeMatches('stale-code','stale-code',digest),false);});
+test('the verifier carries no plaintext code',()=>assert.equal(digest.includes(pass),false));
