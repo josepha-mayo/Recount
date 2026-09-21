@@ -1,0 +1,88 @@
+name: Deploy private Recount code verifier
+on:
+  push:
+    branches: [master]
+    paths: [.github/workflows/deploy-code-verifier.yml]
+permissions:
+  contents: read
+concurrency:
+  group: recount-production-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 3ebb05fee80a17f8e031f5f8d1ea40a1b0c7b602
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Regression and authorization tests before configuring release
+        run: |
+          mkdir -p /tmp/recount-verifier-proof
+          node --test tests/*.test.mjs > /tmp/recount-verifier-proof/node.log
+          node --experimental-strip-types --test diagnostics/functions-env.test.mjs diagnostics/judge-auth.test.mjs > /tmp/recount-verifier-proof/authorization-tests.log 2>&1
+          python -m unittest discover -s tests -p 'test_*.py' -v > /tmp/recount-verifier-proof/http.log 2>&1
+      - name: Generate server-only one-way verifier from the existing Actions secret
+        env:
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+        run: |
+          node --experimental-strip-types --input-type=module <<'JS'
+          import fs from 'node:fs';import {codeDigest} from './netlify/lib/judge-auth.mts';
+          const code=process.env.RECOUNT_DEMO_PASS;
+          if(typeof code!=='string'||code.length<16||code.length>128||code.trim()!==code)throw Error('Judge secret is missing or malformed');
+          fs.writeFileSync('netlify/lib/judge-verifier.mts','// Deployment-generated one-way verifier; no plaintext credential.\nexport const JUDGE_CODE_SHA256 = '+JSON.stringify(codeDigest(code))+';\n',{mode:0o600});
+          fs.writeFileSync('/tmp/recount-verifier-proof/BUILD.json',JSON.stringify({source_commit:'3ebb05fee80a17f8e031f5f8d1ea40a1b0c7b602',judge_code_changed:false,raw_judge_code_in_bundle:false,verifier_generated:true},null,2));
+          JS
+      - name: Check compiled authorization without a raw code environment variable
+        env:
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+        run: |
+          node --experimental-strip-types --input-type=module <<'JS'
+          import fs from 'node:fs';import assert from 'node:assert/strict';
+          import config from './netlify/functions/config.mts';import token from './netlify/functions/token.mts';
+          const code=process.env.RECOUNT_DEMO_PASS;delete process.env.RECOUNT_DEMO_PASS;
+          process.env.RECOUNT_SIGNING_SECRET='synthetic-ci-signing-secret-long-enough';process.env.ASSEMBLYAI_API_KEY='synthetic-ci-provider-key';process.env.RECOUNT_ALLOWED_ORIGIN='https://recount-voice.netlify.app';
+          const c=await config(new Request(process.env.RECOUNT_ALLOWED_ORIGIN+'/api/config'));assert.equal(c.status,200);const data=await c.json(),cookie=c.headers.get('set-cookie').split(';')[0];
+          let calls=0;globalThis.fetch=async()=>{calls++;return Response.json({token:'synthetic-temporary-provider-token'});};
+          const request=value=>new Request(process.env.RECOUNT_ALLOWED_ORIGIN+'/api/token',{method:'POST',headers:{origin:process.env.RECOUNT_ALLOWED_ORIGIN,cookie,'content-type':'application/json','x-recount-token':data.csrf},body:JSON.stringify({consent:true,access_code:value})});
+          assert.equal((await token(request('synthetic-invalid-code'))).status,403);assert.equal(calls,0);
+          assert.equal((await token(request(code))).status,200);assert.equal(calls,1);
+          fs.writeFileSync('/tmp/recount-verifier-proof/COMPILED_AUTH.json',JSON.stringify({status:'passed',raw_environment_code_present:false,rejected_control_http:403,accepted_code_http:200,provider:'mocked for this unit test only'},null,2));
+          JS
+      - name: Install pinned CLI
+        run: npm install --prefix /tmp/recount-verifier-cli netlify-cli@27.0.1 --no-audit --no-fund
+      - name: Deploy the tested source and server verifier to the existing site
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: df8d4f20-8294-4f70-820a-731fa440156b
+          CI: 'true'
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';import {execFileSync} from 'node:child_process';
+          const r={status:'failed',source_commit:'3ebb05fee80a17f8e031f5f8d1ea40a1b0c7b602'};
+          try{
+            const text=execFileSync('/tmp/recount-verifier-cli/node_modules/.bin/netlify',['deploy','--prod','--context','production','--site',process.env.NETLIFY_SITE_ID,'--skip-functions-cache','--message','Recount tested private judge verifier','--json'],{env:process.env,timeout:360000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']}).toString();
+            const d=JSON.parse(text);r.status='deployed';r.deploy_id=d.deploy_id??d.id;
+          }catch(e){r.exit_code=e.status??null;r.error=String(e.stderr??'').split(process.env.NETLIFY_AUTH_TOKEN).join('[REDACTED]').slice(-1500);}
+          fs.writeFileSync('/tmp/recount-verifier-proof/DEPLOY.json',JSON.stringify(r,null,2));console.log(JSON.stringify(r));if(r.status!=='deployed')process.exitCode=1;
+          JS
+      - name: Require live source, real code acceptance and provider transport
+        env:
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+          RECOUNT_RECEIPT: /tmp/recount-verifier-proof/PRODUCTION.json
+          RECOUNT_SOURCE_COMMIT: 3ebb05fee80a17f8e031f5f8d1ea40a1b0c7b602
+        run: node delivery/verify-production.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-code-verifier-proof
+          path: /tmp/recount-verifier-proof/
+          retention-days: 14
+          if-no-files-found: error
