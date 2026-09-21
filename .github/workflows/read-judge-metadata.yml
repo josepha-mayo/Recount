@@ -1,0 +1,40 @@
+name: Read judge configuration metadata
+on:
+  push:
+    branches: [master]
+    paths: [.github/workflows/read-judge-metadata.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const sid='df8d4f20-8294-4f70-820a-731fa440156b',base='https://api.netlify.com/api/v1';
+          const headers={Authorization:'Bearer '+process.env.NETLIFY_AUTH_TOKEN};
+          const request=url=>fetch(url,{headers,redirect:'error',signal:AbortSignal.timeout(15000)});
+          const siteResponse=await request(base+'/sites/'+sid);if(!siteResponse.ok)throw Error('Project read failed');const site=await siteResponse.json();
+          const report={site_http:siteResponse.status,checks:[]};
+          const meta=v=>({key:v.key,is_secret:v.is_secret,scopes:v.scopes,contexts:(v.values??[]).map(x=>x.context)});
+          for(const [name,query] of [['exact','/RECOUNT_DEMO_PASS?site_id='+sid],['production','?site_id='+sid+'&context_name=production'],['all','?site_id='+sid+'&context_name=all']]){
+            const r=await request(base+'/accounts/'+site.account_id+'/env'+query);const data=await r.json().catch(()=>({}));
+            const row={name,status:r.status};if(r.ok)row.metadata=Array.isArray(data)?data.map(meta):meta(data);else row.error_code=data.code;
+            report.checks.push(row);
+          }
+          const cfg=await fetch('https://recount-voice.netlify.app/api/config',{cache:'no-store',signal:AbortSignal.timeout(15000)});report.live_config_http=cfg.status;
+          const d=await cfg.json();report.live_voice_enabled=d.voice_enabled===true;report.live_requires_code=d.requires_access_code===true;
+          fs.mkdirSync('/tmp/judge-read',{recursive:true});fs.writeFileSync('/tmp/judge-read/READ.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+          JS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recount-judge-metadata
+          path: /tmp/judge-read/
+          retention-days: 7
