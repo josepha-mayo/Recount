@@ -1,0 +1,64 @@
+name: Recount browser submission check
+on:
+  push:
+    branches: [master]
+    paths: [.github/workflows/browser-submission-check-20260921.yml]
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 3ebb05fee80a17f8e031f5f8d1ea40a1b0c7b602
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install browser and stock voice generator
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq espeak-ng
+          python -m pip install -r requirements-dev.txt kokoro-onnx==0.4.9 numpy==2.2.6 onnxruntime==1.22.1 soundfile==0.13.1
+          python -m playwright install --with-deps chromium
+      - name: Generate the previously specified nonhuman test speech
+        env:
+          OMP_NUM_THREADS: '2'
+        run: |
+          python - <<'PY'
+          import hashlib,json,urllib.request,wave
+          from pathlib import Path
+          import numpy as np
+          from kokoro_onnx import Kokoro
+          root=Path('/tmp/recount-voice-input');root.mkdir(exist_ok=True)
+          models=Path('/tmp/recount-kokoro');models.mkdir(exist_ok=True)
+          expected={'kokoro-v1.0.onnx':'7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5','voices-v1.0.bin':'bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d'}
+          for name,digest in expected.items():
+              target=models/name
+              urllib.request.urlretrieve('https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/'+name,target)
+              assert hashlib.sha256(target.read_bytes()).hexdigest()==digest
+          model=Kokoro(str(models/'kokoro-v1.0.onnx'),str(models/'voices-v1.0.bin'))
+          rows=[]
+          for name,text in [('count','Rice twelve bags.'),('correction','No, thirteen bags.'),('wrong-confirm','Confirm twelve.'),('confirm','Confirm thirteen.')]:
+              audio,sr=model.create(text,voice='af_heart',speed=.95,lang='en-us');audio=np.asarray(audio,dtype=np.float32)
+              assert np.isfinite(audio).all() and sr==24000
+              with wave.open(str(root/(name+'.wav')),'wb') as f:
+                  f.setnchannels(1);f.setsampwidth(2);f.setframerate(sr);f.writeframes((np.clip(audio,-1,1)*32767).astype('<i2').tobytes())
+              rows.append({'name':name,'text':text,'seconds':len(audio)/sr,'sha256':hashlib.sha256((root/(name+'.wav')).read_bytes()).hexdigest()})
+          (root/'MANIFEST.json').write_text(json.dumps({'input':'Kokoro af_heart stock synthesis','human_recording':False,'clips':rows},indent=2))
+          PY
+      - name: Exercise the live browser without changing its authorization or deployment
+        env:
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+          RECOUNT_LIVE_OUT: /tmp/recount-browser-check/browser
+          RECOUNT_LIVE_INPUT: /tmp/recount-voice-input
+        run: python diagnostics/browser_live_voice.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-browser-submission-check
+          path: /tmp/recount-browser-check/
+          retention-days: 14
+          if-no-files-found: warn
