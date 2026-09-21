@@ -1,0 +1,98 @@
+name: Authorized Recount release 20260921
+on:
+  push:
+    branches: [master]
+    paths: [.github/workflows/release-authorized-20260921.yml]
+permissions:
+  contents: read
+concurrency:
+  group: recount-production-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d9841875a27c95dcb50d36c91728fdce9252ebfb
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check configured credentials and site access without exposing values
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          fs.mkdirSync('/tmp/recount-authorized',{recursive:true});
+          const report={netlify_secret_present:!!process.env.NETLIFY_AUTH_TOKEN,judge_secret_present:!!process.env.RECOUNT_DEMO_PASS};
+          if(report.netlify_secret_present&&report.judge_secret_present){
+            const r=await fetch('https://api.netlify.com/api/v1/sites/df8d4f20-8294-4f70-820a-731fa440156b',{headers:{Authorization:'Bearer '+process.env.NETLIFY_AUTH_TOKEN},redirect:'error',signal:AbortSignal.timeout(15000)});
+            report.site_http_status=r.status;
+            if(r.ok){const s=await r.json();report.correct_site=s.id==='df8d4f20-8294-4f70-820a-731fa440156b'&&s.name==='recount-voice';}
+          }
+          fs.writeFileSync('/tmp/recount-authorized/ACCESS.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+          if(!report.correct_site)throw Error('Required release credentials or site access unavailable');
+          JS
+      - name: Recheck pinned application source
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test tests/*.test.mjs > /tmp/recount-authorized/node.log
+          python -m unittest discover -s tests -p 'test_*.py' -v > /tmp/recount-authorized/http.log 2>&1
+          node --check delivery/verify-production.mjs
+          git archive HEAD > /tmp/recount-authorized/source.tar
+      - name: Install pinned CLI
+        run: npm install --prefix /tmp/recount-deploy-cli netlify-cli@27.0.1 --no-audit --no-fund
+      - name: Apply existing code to production functions and deploy tested source
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+          NETLIFY_SITE_ID: df8d4f20-8294-4f70-820a-731fa440156b
+          CI: 'true'
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';import {execFileSync} from 'node:child_process';
+          const cli='/tmp/recount-deploy-cli/node_modules/.bin/netlify';
+          const report={source_commit:'d9841875a27c95dcb50d36c91728fdce9252ebfb',status:'failed'};
+          const secrets=[process.env.NETLIFY_AUTH_TOKEN,process.env.RECOUNT_DEMO_PASS].filter(Boolean);
+          const clean=x=>{let s=String(x??'');for(const v of secrets)s=s.split(v).join('[REDACTED]');return s.replace(/\x1b\[[0-9;]*m/g,'').slice(-6000);};
+          try{
+            report.stage='production_environment';
+            execFileSync(cli,['env:set','RECOUNT_DEMO_PASS',process.env.RECOUNT_DEMO_PASS,'--site',process.env.NETLIFY_SITE_ID,'--context','production','--scope','functions','--secret','--force'],{env:process.env,timeout:60000,stdio:['ignore','pipe','pipe']});
+            report.stage='deploy';
+            const env={...process.env};delete env.RECOUNT_DEMO_PASS;
+            const text=execFileSync(cli,['deploy','--prod','--context','production','--site',process.env.NETLIFY_SITE_ID,'--skip-functions-cache','--message','Authorized tested Recount d984187','--json'],{env,timeout:360000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']}).toString();
+            const data=JSON.parse(text);report.deploy_id=data.deploy_id??data.id??null;report.status='deployed';
+          }catch(e){report.exit_code=e.status??null;report.error=clean(String(e.stdout??'')+'\n'+String(e.stderr??''));}
+          fs.writeFileSync('/tmp/recount-authorized/DEPLOY.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+          if(report.status!=='deployed')process.exitCode=1;
+          JS
+      - name: Verify actual judge authorization, served source and real AssemblyAI transport
+        env:
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+          RECOUNT_RECEIPT: /tmp/recount-authorized/PRODUCTION.json
+          GITHUB_SHA: d9841875a27c95dcb50d36c91728fdce9252ebfb
+        run: node delivery/verify-production.mjs
+      - name: Browser regression and live output checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          RECOUNT_STARTUP_OUT=/tmp/recount-authorized/browser-startup python tests/browser_startup_errors.py
+          RECOUNT_BARRIER_OUT=/tmp/recount-authorized/browser-barrier python tests/browser_readback_barrier.py
+          RECOUNT_AUDIO_BASE=https://recount-voice.netlify.app RECOUNT_AUDIO_OUT=/tmp/recount-authorized/browser-public-audio python tests/browser_bundled_audio.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-authorized-release-20260921
+          path: /tmp/recount-authorized/
+          retention-days: 14
+          if-no-files-found: error
