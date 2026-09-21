@@ -1,0 +1,10 @@
+{
+  "01-intro": "This is Recount, a correction-aware voice stocktaking prototype. A spoken count is not a completed stock record. Twelve, no, thirteen should remain one draft until the operator explicitly confirms the corrected number.",
+  "02-architecture": "AssemblyAI provides streaming speech recognition. Recount manages the draft, explicit units and revision history. It pauses microphone capture while its bundled neural voice reads back the count, then resumes listening in the same provider session.",
+  "03-count": "This recording uses generated speech with real AssemblyAI calls. Rice twelve bags creates a draft. The confirmed stock sheet stays empty.",
+  "04-correction": "No, thirteen bags changes the same draft to thirteen. It does not add another stock movement. The operator still has to confirm the corrected count.",
+  "05-wrong-confirm": "Confirm twelve deliberately contradicts the thirteen in the draft. Recount refuses to save. A plausible transcription is not enough when the confirmation does not match.",
+  "06-confirm": "Confirm thirteen matches the current read-back. Exactly one Rice record is saved with thirteen bags. The test then ends the session and verifies that exact row in the downloaded CSV.",
+  "07-limits": "The public integration works in this generated-input test. That is not proof of human speech reliability. Two earlier human recording holdouts failed, and those failures remain documented. Real operators, background noise, accents and time to a correct count are the next validation steps.",
+  "08-close": "Recount is built for a small stocktaking desk, not yet a production inventory system. Count it. Correct it. Confirm it. The application, source and verification evidence are available for review."
+}
