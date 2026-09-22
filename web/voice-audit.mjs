@@ -55,12 +55,12 @@ export class VoiceAudit {
   snapshot(state,{origin='',assetHashes={},secrets=[]}={}){
     let site='';try{site=new URL(origin).origin;}catch{}
     const hashes={};
-    for(const name of ['app.mjs','core.mjs','capture-gate.mjs','voice-runtime.mjs','readback.mjs','voice-audit.mjs','audio-worklet.js','streaming-request.mjs','speaker-check.mjs','audio-readback.mjs','startup-errors.mjs']){
+    for(const name of ['app.mjs','core.mjs','capture-gate.mjs','voice-runtime.mjs','readback.mjs','voice-audit.mjs','audio-worklet.js','streaming-request.mjs','speaker-check.mjs','audio-readback.mjs','startup-errors.mjs','closeout.mjs']){
       const hash=assetHashes[name];if(typeof hash==='string'&&/^[a-f0-9]{64}$/.test(hash))hashes[name]=hash;
     }
     const safe=redactForExport({schema:'recount-session-2',revision:state.revision,counts:state.counts,pending:state.pending,review:state.review,hold:state.hold,history:state.history},secrets);
     return {
-      schema:'recount-interaction-report-1',client_revision:'persistent-startup-errors-20260920',site,
+      schema:'recount-interaction-report-1',client_revision:'stocktake-closeout-20260922',site,
       classification:'Client-collected interaction evidence; no automatic pass, human-speaker, physical-count or ASR-accuracy claim.',
       privacy:{audio_recorded:false,audio_in_report:false,configured_credentials_included:false,known_credential_redactions:safe.redactions,review_before_sharing:true,contains_transcript_text:true,upload_performed:false},
       events:structuredClone(this.events),events_dropped:this.dropped,asset_sha256:hashes,

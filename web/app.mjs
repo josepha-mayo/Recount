@@ -1,3 +1,4 @@
+import {buildCloseout,exportCompleteCSV} from './closeout.mjs';
 import {CATALOG,initial,reduce,replay,ready,exportCSV} from './core.mjs';
 import {VoiceRuntime} from './voice-runtime.mjs';
 import {ReadbackPlayer} from './readback.mjs';
@@ -46,6 +47,18 @@ function render(){
     button.onclick=()=>userAction({kind:'resume',reviewId:entry.id});
     row.append(label,button);reviewRows.append(row);
   }
+  const closeout=buildCloseout(state);
+  $('closeoutBadge').textContent=`${closeout.totals.confirmed} / ${closeout.totals.scope} resolved`;
+  $('closeoutStatus').textContent=closeout.complete?'Every scoped item is confirmed. No open drafts remain.':`${closeout.totals.needs_review} items need review. ${closeout.totals.not_counted} items have not been counted.${closeout.hold?' Resolve the audio hold before closing.':''}`;
+  $('handoff').disabled=locked;$('completeCSV').disabled=locked||!closeout.complete;
+  const closure=$('closeoutRows');closure.replaceChildren();
+  for(const row of closeout.rows){
+    const line=document.createElement('div');line.className='closeout-row';
+    const name=document.createElement('strong');name.textContent=row.item;
+    const status=document.createElement('span');status.className='closeout-'+row.status;
+    status.textContent=row.status==='confirmed'?`${row.confirmed_quantity} ${row.unit} confirmed`:row.status==='needs_review'?`${row.open_drafts} open draft${row.open_drafts===1?'':'s'}`:'Not counted';
+    line.append(name,status);closure.append(line);
+  }
   const last=state.history.at(-1);$('last').textContent=last?`${last.kind.toUpperCase()} · revision ${state.revision}\n${last.text??last.reason??state.reply}\n${last.source??'explicit local control'}`:'Waiting for a count.';
   const phase=voice.phase();
   $('mode').textContent=locked?`AUDIO ${phase.toUpperCase()}`:state.hold?'REVIEW REQUIRED':'TEXT / REVIEW MODE';
@@ -83,12 +96,14 @@ $('voiceReport').onclick=async()=>{try{
   if(voice.active())throw Error('Stop voice and wait for finalization before exporting the report.');
   if(!audit.hasReport())throw Error('Run Test speaker or start a voice session first.');
   const revision=state.revision,hashes={};
-  for(const name of ['app.mjs','core.mjs','capture-gate.mjs','voice-runtime.mjs','readback.mjs','voice-audit.mjs','audio-worklet.js','streaming-request.mjs','speaker-check.mjs','audio-readback.mjs','startup-errors.mjs']){
+  for(const name of ['app.mjs','core.mjs','capture-gate.mjs','voice-runtime.mjs','readback.mjs','voice-audit.mjs','audio-worklet.js','streaming-request.mjs','speaker-check.mjs','audio-readback.mjs','startup-errors.mjs','closeout.mjs']){
     try{const r=await fetch('/'+name,{cache:'no-store'});if(!r.ok)continue;const digest=await crypto.subtle.digest('SHA-256',await r.arrayBuffer());hashes[name]=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');}catch{}
   }
   if(voice.active()||state.revision!==revision)throw Error('The session changed during export. Finish it and try again.');
   download('Recount-Interaction-Report.json',JSON.stringify(audit.snapshot(state,{origin:location.origin,assetHashes:hashes,secrets:[$('accessCode').value.trim()]}),null,2),'application/json');
 }catch(e){error(e);}};
+$('handoff').onclick=()=>{try{if(voice.active())throw Error('Stop voice before exporting a handoff.');download('recount-review-handoff.json',JSON.stringify(buildCloseout(state),null,2),'application/json');}catch(e){error(e);}};
+$('completeCSV').onclick=()=>{try{if(voice.active())throw Error('Stop voice before closing the stocktake.');download('recount-complete-stocktake.csv',exportCompleteCSV(state),'text/csv');}catch(e){error(e);}};
 $('session').onclick=()=>{if(voice.active())return error('Finish the voice session before saving.');if(redactForExport(state.history,[$('accessCode').value.trim()]).redactions)return error('This session contains an access code in its transcript. Use the redacted voice report instead; the original history was not altered.');download('recount-session.json',JSON.stringify({schema:'recount-session-2',history:state.history},null,2),'application/json');};
 $('load').onchange=async()=>{try{
   if(voice.active())throw Error('Finish the voice session before opening a session.');
