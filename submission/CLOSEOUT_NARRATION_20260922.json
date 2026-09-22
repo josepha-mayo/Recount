@@ -1,0 +1,15 @@
+{
+  "title": "Recount: Finish the Stocktake",
+  "disclosure": "Stock neural narration over real automated browser footage and explanatory slides. Test microphone input was generated. One count was confirmed on screen. No human validation claim.",
+  "voice": "af_heart",
+  "segments": [
+    {"id":"01","text":"A saved row is not a finished stocktake. Recount turns spoken counts into a reviewable handoff, while keeping unfinished work visible. It is built for a small stockroom where the person counting also has to stop, switch tasks, and come back."},
+    {"id":"02","text":"Here is the workflow, not a single correction trick. Beans are counted but left unconfirmed. Naming cooking oil parks that beans draft instead of saving or losing it. The operator can continue counting another item. The unfinished work stays in a separate review queue."},
+    {"id":"03","text":"Oil is sixteen bottles. Confirming fifteen is rejected. Soap is explicitly counted as zero. Rice has not been counted at all. These are different states. The handoff now shows two confirmed items, one unresolved draft, and one omission. A partial export is allowed, but a complete-stocktake export is blocked."},
+    {"id":"04","text":"Now the session is explicitly saved, the page is reloaded, and the saved session is reopened. Beans returns in Needs review. Opening that draft does not save it. This demonstration uses an explicit on-screen confirmation for beans, then a second voice session to count and confirm rice. Four scoped items are now resolved."},
+    {"id":"05","text":"AssemblyAI provides the real finalized speech turns. Recount controls what those turns are allowed to change. The revision-aware ledger separates drafts from confirmed stock, and a neural read-back pauses microphone capture before listening resumes. The final handoff records unresolved work and how each count was confirmed, without including transcript text or audio."},
+    {"id":"06","text":"This public-site run completed nine speech turns, nine read-backs, and four exact exported rows across two provider sessions. Three counts were confirmed by speech, and one on screen. The input was generated test speech. The real service, application state, and downloads were exercised. Earlier human recording tests failed and remain documented; broad human reliability is not yet established."},
+    {"id":"07","text":"The first customer hypothesis is a stockroom manager already using a spreadsheet, not a warehouse looking for another full management system. The proposed business model is per-location software. The next pilot must measure exact final counts, assistance, and time against the current workflow. Catalogue import and stock-system integrations come after the dialogue works with real operators."},
+    {"id":"08","text":"Recount. Finish the stocktake, not just the sentence. Try the deployed prototype, inspect the source, and challenge the handoff: what is confirmed, what still needs review, and what has not been counted? Built solo by Joseph Ayanda."}
+  ]
+}
