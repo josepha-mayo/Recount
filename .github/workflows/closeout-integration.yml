@@ -1,0 +1,73 @@
+name: Recount closeout integration
+on:
+  push:
+    branches: [feat/stocktake-closeout-20260922]
+    paths: [.github/workflows/closeout-integration.yml]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply the bounded frontend integration
+        run: |
+          mkdir -p /tmp/recount-closeout
+          python maintenance/integrate-closeout-ui.py
+          git diff --check
+      - name: Verify software and unchanged authorization contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test --test-concurrency=1 tests/*.test.mjs | tee /tmp/recount-closeout/node.log
+          node --experimental-strip-types --test diagnostics/functions-env.test.mjs diagnostics/judge-auth.test.mjs > /tmp/recount-closeout/auth.log 2>&1
+          python -m unittest discover -s tests -p 'test_*.py' -v > /tmp/recount-closeout/http.log 2>&1
+      - name: Exercise actual desktop and mobile closeout and existing browser regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          RECOUNT_CLOSEOUT_OUT=/tmp/recount-closeout/closeout python tests/browser_closeout.py
+          python tests/browser.py
+          cp verification/browser.json /tmp/recount-closeout/general-browser.json
+          RECOUNT_BARRIER_OUT=/tmp/recount-closeout/barrier python tests/browser_readback_barrier.py
+          RECOUNT_STARTUP_OUT=/tmp/recount-closeout/startup python tests/browser_startup_errors.py
+          RECOUNT_VOICE_TEST_OUT=/tmp/recount-closeout/recovery python tests/browser_voice_recovery.py
+          RECOUNT_AUDIO_OUT=/tmp/recount-closeout/audio python tests/browser_bundled_audio.py
+      - name: Save only tested frontend changes to this feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'josepha-mayo'
+          git config user.email '192471872+josepha-mayo@users.noreply.github.com'
+          git add web/app.mjs web/index.html web/style.css web/voice-audit.mjs server.py tests/browser.py tests/browser_readback_barrier.py
+          git commit -m 'Integrate stocktake closeout and multi-item workflow presentation'
+          git push origin HEAD:refs/heads/feat/stocktake-closeout-20260922
+          git rev-parse HEAD > /tmp/recount-closeout/source-commit.txt
+          git diff HEAD~1 HEAD --binary > /tmp/recount-closeout/frontend.patch
+          python - <<'PY'
+          import json,re,subprocess
+          from pathlib import Path
+          root=Path('/tmp/recount-closeout')
+          closeout=json.loads((root/'closeout/RECEIPT.json').read_text())
+          receipts=[json.loads((root/p).read_text()) for p in ['general-browser.json','barrier/RECEIPT.json','startup/RECEIPT.json','recovery/RECEIPT.json','audio/RECEIPT.json']]
+          assert closeout['status']=='passed' and all(r['status']=='passed' for r in receipts)
+          n=(root/'node.log').read_text()
+          r={'status':'passed','source_commit':subprocess.check_output(['git','rev-parse','HEAD']).decode().strip(),'node_tests':int(re.search(r'# tests (\d+)',n)[1]),'closeout_browser_checks':closeout['check_count'],'other_browser_checks':sum(x['check_count'] for x in receipts),'deployed':False,'provider_calls':0,'human_audio_cases':0,'scope':'Real Chromium UI and downloads with typed multi-item task; speech fixtures in existing regression suites are simulated. No production deployment or human-validation claim.'}
+          (root/'RECEIPT.json').write_text(json.dumps(r,indent=2));print(json.dumps(r))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-closeout-integration
+          path: /tmp/recount-closeout/
+          retention-days: 14
+          if-no-files-found: error
