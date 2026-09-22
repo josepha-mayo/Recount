@@ -1,0 +1,121 @@
+name: Recount closeout release and multi-item voice
+on:
+  push:
+    branches: [master]
+    paths: [.github/workflows/release-closeout-20260922.yml]
+permissions:
+  contents: read
+concurrency:
+  group: recount-production-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 02fbb12a197995e044dd05c10c6b5209fdc02df6
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Recheck exact source before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/recount-closeout-release
+          git rev-parse HEAD > /tmp/recount-closeout-release/source-commit.txt
+          node --test --test-concurrency=1 tests/*.test.mjs > /tmp/recount-closeout-release/node.log
+          node --experimental-strip-types --test diagnostics/functions-env.test.mjs diagnostics/judge-auth.test.mjs > /tmp/recount-closeout-release/auth.log 2>&1
+          python -m unittest discover -s tests -p 'test_*.py' -v > /tmp/recount-closeout-release/http.log 2>&1
+          python -m py_compile diagnostics/browser_stocktake_voice.py
+      - name: Install browser and stock test-speech generator
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq espeak-ng
+          python -m pip install -r requirements-dev.txt kokoro-onnx==0.4.9 numpy==2.2.6 onnxruntime==1.22.1 soundfile==0.13.1
+          python -m playwright install --with-deps chromium
+          RECOUNT_CLOSEOUT_OUT=/tmp/recount-closeout-release/predeploy-browser python tests/browser_closeout.py
+      - name: Generate fixed multi-item input, never a human recording
+        env:
+          OMP_NUM_THREADS: '2'
+        run: |
+          python - <<'PY'
+          import hashlib,json,urllib.request,wave
+          from pathlib import Path
+          import numpy as np
+          from kokoro_onnx import Kokoro
+          root=Path('/tmp/recount-stocktake-input');root.mkdir(exist_ok=True)
+          models=Path('/tmp/recount-kokoro');models.mkdir(exist_ok=True)
+          expected={'kokoro-v1.0.onnx':'7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5','voices-v1.0.bin':'bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d'}
+          for name,digest in expected.items():
+              target=models/name
+              urllib.request.urlretrieve('https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/'+name,target)
+              assert hashlib.sha256(target.read_bytes()).hexdigest()==digest
+          model=Kokoro(str(models/'kokoro-v1.0.onnx'),str(models/'voices-v1.0.bin'))
+          rows=[]
+          clips=[('beans','Beans twenty-seven bags.'),('oil-focus','Cooking oil.'),('oil-count','Sixteen bottles.'),('oil-wrong-confirm','Confirm fifteen.'),('oil-confirm','Confirm sixteen.'),('soap-zero','Soap zero bars.'),('soap-confirm','Confirm zero.'),('rice-count','Rice forty-one bags.'),('rice-confirm','Confirm forty-one.')]
+          for name,text in clips:
+              audio,sr=model.create(text,voice='af_heart',speed=.95,lang='en-us');audio=np.asarray(audio,dtype=np.float32)
+              assert np.isfinite(audio).all() and sr==24000
+              with wave.open(str(root/(name+'.wav')),'wb') as f:
+                  f.setnchannels(1);f.setsampwidth(2);f.setframerate(sr);f.writeframes((np.clip(audio,-1,1)*32767).astype('<i2').tobytes())
+              rows.append({'name':name,'text':text,'seconds':len(audio)/sr,'sha256':hashlib.sha256((root/(name+'.wav')).read_bytes()).hexdigest()})
+          (root/'MANIFEST.json').write_text(json.dumps({'human_recording':False,'voice':'Kokoro af_heart','model_hashes':expected,'clips':rows},indent=2))
+          PY
+      - name: Generate private verifier from unchanged judge secret
+        env:
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+        run: node delivery/build-judge-verifier.mjs
+      - name: Install pinned deployment CLI
+        run: npm install --prefix /tmp/recount-closeout-cli netlify-cli@27.0.1 --no-audit --no-fund
+      - name: Publish exact tested source to existing site
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: df8d4f20-8294-4f70-820a-731fa440156b
+          CI: 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$NETLIFY_AUTH_TOKEN"
+          /tmp/recount-closeout-cli/node_modules/.bin/netlify deploy --prod --context production --site "$NETLIFY_SITE_ID" --skip-functions-cache --message 'Recount stocktake closeout 02fbb12' --json > /tmp/recount-closeout-deploy-private.json
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const d=JSON.parse(fs.readFileSync('/tmp/recount-closeout-deploy-private.json','utf8'));
+          fs.writeFileSync('/tmp/recount-closeout-release/DEPLOY.json',JSON.stringify({status:'deployed',site_id:'df8d4f20-8294-4f70-820a-731fa440156b',deploy_id:d.deploy_id??d.id??null,source_commit:'02fbb12a197995e044dd05c10c6b5209fdc02df6',judge_code_changed:false},null,2));
+          JS
+      - name: Verify served source, real authorization and provider transport
+        env:
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+          RECOUNT_SOURCE_COMMIT: 02fbb12a197995e044dd05c10c6b5209fdc02df6
+          RECOUNT_RECEIPT: /tmp/recount-closeout-release/PRODUCTION.json
+        run: |
+          node delivery/verify-production.mjs
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';import {createHash} from 'node:crypto';
+          const r=await fetch('https://recount-voice.netlify.app/closeout.mjs',{cache:'no-store',signal:AbortSignal.timeout(15000)}),b=Buffer.from(await r.arrayBuffer());
+          const report={path:'closeout.mjs',status:r.ok&&b.equals(fs.readFileSync('web/closeout.mjs'))?'passed':'failed',sha256:createHash('sha256').update(b).digest('hex')};
+          fs.writeFileSync('/tmp/recount-closeout-release/CLOSEOUT_ASSET.json',JSON.stringify(report,null,2));if(report.status!=='passed')process.exitCode=1;
+          JS
+      - name: Real public browser, two bounded voice sessions, interrupted draft and complete export
+        env:
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+          RECOUNT_SOURCE_COMMIT: 02fbb12a197995e044dd05c10c6b5209fdc02df6
+          RECOUNT_LIVE_INPUT: /tmp/recount-stocktake-input
+          RECOUNT_STOCKTAKE_OUT: /tmp/recount-closeout-release/live
+        run: python diagnostics/browser_stocktake_voice.py
+      - name: Preserve disclosed generated input
+        if: always()
+        run: |
+          if test -d /tmp/recount-stocktake-input; then cp -r /tmp/recount-stocktake-input /tmp/recount-closeout-release/input; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-closeout-live-release
+          path: /tmp/recount-closeout-release/
+          retention-days: 14
+          if-no-files-found: error
