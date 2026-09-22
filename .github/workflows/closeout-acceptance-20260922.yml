@@ -1,0 +1,71 @@
+name: Recount closeout acceptance continuation
+on:
+  push:
+    branches: [master]
+    paths: [.github/workflows/closeout-acceptance-20260922.yml]
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: b338094eb4610c147ac74eef4af53f4f0ea36a46
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Preserve source and exact public HTML independently
+        run: |
+          mkdir -p /tmp/recount-continuation
+          git archive HEAD > /tmp/recount-continuation/source.tar
+          git rev-parse HEAD > /tmp/recount-continuation/source-commit.txt
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import {normalizedHostedHTML} from './delivery/hosted-html.mjs';
+          const r=await fetch('https://recount-voice.netlify.app/',{cache:'no-store',signal:AbortSignal.timeout(20000)});
+          const body=await r.text(),expected=fs.readFileSync('web/index.html','utf8');
+          fs.writeFileSync('/tmp/recount-continuation/live-index.html',body);
+          fs.writeFileSync('/tmp/recount-continuation/expected-index.html',expected);
+          const n=normalizedHostedHTML(body);
+          const receipt={http:r.status,byte_exact:body===expected,normalized_exact:n.html===expected,normalizations:n.removed};
+          fs.writeFileSync('/tmp/recount-continuation/HTML.json',JSON.stringify(receipt,null,2));console.log(JSON.stringify(receipt));
+          JS
+      - name: Install browser and reproduce already specified nonhuman inputs
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq espeak-ng
+          python -m pip install -r requirements-dev.txt PyYAML==6.0.2 kokoro-onnx==0.4.9 numpy==2.2.6 onnxruntime==1.22.1 soundfile==0.13.1
+          python -m playwright install --with-deps chromium
+          python - <<'PY'
+          import os,subprocess,yaml
+          from pathlib import Path
+          data=yaml.safe_load(Path('.github/workflows/release-closeout-20260922.yml').read_text())
+          step=next(s for s in data['jobs']['release']['steps'] if s.get('name')=='Generate fixed multi-item input, never a human recording')
+          subprocess.run(['bash','-euo','pipefail','-c',step['run']],env={**os.environ,'OMP_NUM_THREADS':'2'},check=True)
+          PY
+      - name: Real multi-item voice and interrupted-session recovery
+        env:
+          RECOUNT_DEMO_PASS: ${{ secrets.RECOUNT_DEMO_PASS }}
+          RECOUNT_SOURCE_COMMIT: 02fbb12a197995e044dd05c10c6b5209fdc02df6
+          RECOUNT_LIVE_INPUT: /tmp/recount-stocktake-input
+          RECOUNT_STOCKTAKE_OUT: /tmp/recount-continuation/live
+        run: python diagnostics/browser_stocktake_voice.py
+      - name: Preserve source tests and disclosed inputs
+        if: always()
+        run: |
+          node --test --test-concurrency=1 tests/*.test.mjs > /tmp/recount-continuation/node.log
+          python -m unittest discover -s tests -p 'test_*.py' -v > /tmp/recount-continuation/http.log 2>&1
+          if test -d /tmp/recount-stocktake-input; then cp -r /tmp/recount-stocktake-input /tmp/recount-continuation/input; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recount-closeout-continuation
+          path: /tmp/recount-continuation/
+          retention-days: 14
+          if-no-files-found: error
