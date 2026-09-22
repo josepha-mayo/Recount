@@ -1,0 +1,41 @@
+name: Recount published cover and state
+on:
+  push:
+    branches: [master]
+    paths: [.github/workflows/submission-cover-state-20260922.yml]
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Capture public cover and exact submission fields without modifying them
+        run: |
+          python - <<'PY'
+          import urllib.request,hashlib,json,re,datetime
+          from pathlib import Path
+          root=Path('/tmp/recount-final-cover');root.mkdir(exist_ok=True)
+          url='https://lablab.ai/ai-hackathons/assemblyai-voice-agent-hackathon/recount/recount-finish-the-stocktake'
+          cover='https://storage.googleapis.com/lablab-static-eu/submissions/u76ct4tpwmv2c9j4q6pmq6fu/ay8wofq7algrj2jjxskb78rp/image/image_aei53hf7j56t1yafv50mkjnc.jpg'
+          def get(u):
+           with urllib.request.urlopen(urllib.request.Request(u,headers={'Cache-Control':'no-cache'}),timeout=25) as r:return r.read(3000000)
+          data=get(cover);(root/'uploaded-cover.jpg').write_bytes(data)
+          html=get(url).decode('utf8');(root/'public-after-update.html').write_text(html)
+          s=html.replace('\\"','"')
+          marker='video_obndxoi7fwrnjk9s7u2zzo75.mp4';n=s.find('"isDraft"',s.find(marker))
+          excerpt=s[n:n+800] if n>=0 else ''
+          draft=re.search(r'"isDraft"\s*:\s*(true|false)',excerpt)
+          platform=re.search(r'"demoPlatform"\s*:\s*"([^"]+)"',excerpt)
+          report={'checked_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'public_url':url,'is_draft':None if draft is None else draft[1]=='true','demo_platform':None if platform is None else platform[1],'public_submission_field_excerpt':excerpt,'cover_sha256':hashlib.sha256(data).hexdigest(),'cover_bytes':len(data),'cover_note':'Hash differs from the original approved JPEG; retained for visual comparison, not declared identical.'}
+          (root/'STATE.json').write_text(json.dumps(report,indent=2));print(json.dumps(report))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recount-published-cover-state
+          path: /tmp/recount-final-cover/
+          retention-days: 30
+          if-no-files-found: error
