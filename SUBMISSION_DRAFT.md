@@ -1,73 +1,49 @@
-# Recount: submission copy, 21 September 2026
+# Recount submission draft: 22 September 2026
 
-The live authorization failure is fixed and a complete generated-speech interaction passes on the public application. Submission files are prepared separately in the conversation. This is not a claim that the final LabLab form has been submitted or that human microphone validation has passed.
+This copy replaces the earlier single-correction framing. It describes the shipped closeout workflow and the successful public-site multi-item test. It is not a final LabLab submission receipt.
 
 ## Title
 
-Recount: Correction-Aware Voice Stocktaking
+Recount: Finish the Stocktake
 
 ## Short description
 
-A voice stocktaking prototype that keeps corrections on one draft, reads back the quantity, and saves only after explicit confirmation. Uncertain counts stay available for review; confirmed stock exports to CSV.
+Voice stocktaking with unfinished-work recovery. Park uncertain counts, return to exceptions, and hand over a sheet that separates confirmed stock from unresolved or uncounted items. Built on AssemblyAI.
 
 ## Long description
 
-### A count is more than a transcript
+Recount helps a stockroom operator finish a count, not just transcribe it. Its unit of work is the whole scoped stocktake: what is confirmed, what needs review, and what has not been counted.
 
-“Twelve, no, thirteen” should update one pending count, not create two inventory movements. Recount explores a hands-busy stocktaking workflow in which corrections remain attached to the item being counted and confirmation refers to the current quantity.
+AssemblyAI streams finalized speech into a revision-aware ledger. Counts stay in a draft until the quantity is explicitly confirmed. Switching items parks unfinished work in Needs review. Neural read-back pauses microphone capture, then listening resumes in the same provider session.
 
-### How Recount works
+The closeout view distinguishes a confirmed zero from an uncounted item. Partial exports remain available, but a complete-stocktake export is blocked while scoped work is unresolved. A transcript-free handoff records status and confirmation method. Explicit Save session and Open session actions let the operator resume unfinished work after reloading.
 
-AssemblyAI streaming transcription supplies finalized speech turns. Recount's revision-aware ledger keeps the item, quantity and unit explicit. Corrections replace the pending quantity. Spoken confirmation must echo that quantity: “confirm thirteen” can save a draft of thirteen; “confirm twelve” cannot. A generic yes is not permission to write stock.
+The new public-site demonstration covers four items, not one rehearsed correction. It parks beans, rejects a mismatched oil confirmation, distinguishes zero soap from uncounted rice, restores a saved session, resolves beans on screen, and finishes rice by voice. Two real AssemblyAI sessions produced nine final turns, nine read-backs and four exact exported rows. Three counts were speech-confirmed; one was screen-assisted. Only microphone input was generated.
 
-A bundled neural voice reads back the draft. Microphone capture pauses during the reply and resumes in the same provider session. Unfinished drafts can be parked in a separate Needs review tray. They do not enter the stock sheet until reviewed and confirmed. Confirmed counts export as CSV, and a versioned session file preserves local actions for reopening.
+The initial buyer hypothesis is a small-stockroom manager already using spreadsheets. Planned per-location software would add a voice-and-review layer without replacing their stock system. The next pilot compares exact final counts, assistance and time against the existing workflow.
 
-The application uses a constrained command grammar, not a general-purpose dialogue model. Unsupported unit conversions are refused rather than guessed. Connection loss and ambiguous instructions hold work for review rather than silently confirming it.
-
-### What the current demonstration establishes
-
-On 21 September, an automated browser used the public deployment and real AssemblyAI calls to stage Rice 12 bags, correct the same draft to 13, reject “confirm twelve,” and save exactly one Rice / 13 / bags row after “confirm thirteen.” The downloaded CSV was checked exactly. The test also exercised a rejected access code followed by an accepted-code retry. Four finalized turns and four completed read-backs occurred in one provider session.
-
-Only microphone input was generated using a stock neural voice. HTTP responses, recognition events, confidence values, read-back playback, ledger transitions and export were not mocked. A second successful run supplies the current recorded footage. Its narrated walkthrough combines explanatory slides with cropped real-time footage. The soundtrack is added stock narration, not the original browser audio or the builder's voice.
-
-### Scope and next validation
-
-Recount is a prototype with four illustrative catalogue items. It does not place orders, make payments or write to a shop's production inventory. Two earlier frozen human recording tests failed and remain documented. The new generated-input integration does not establish physical-microphone reliability, accent-wide recognition accuracy or customer productivity. Interactive human use, noisy environments and time to a correct count remain the next validation tasks.
+This is a four-item prototype, not a customer deployment. Two earlier human recording tests failed and remain documented. Human reliability and productivity are not yet established. Catalogue import and stock-system integrations are next-stage work.
 
 Built solo by Joseph Ayanda.
 
-## Technology and suggested category tags
+## Actual form fields
 
-Technology: AssemblyAI, Streaming Speech-to-Text, JavaScript, TypeScript, Web Audio, AudioWorklet, Netlify Functions, Kokoro, Playwright.
-
-Suggested categories: Voice AI, Inventory, Productivity, Retail Operations. Use matching options actually offered by the submission form.
-
-Platform: Web application.
-
-## Links
-
+- Repository: https://github.com/josepha-mayo/Recount
 - Application: https://recount-voice.netlify.app/
-- Source: https://github.com/josepha-mayo/Recount
-- Existing team: https://lablab.ai/ai-hackathons/assemblyai-voice-agent-hackathon/recount
-- Current acceptance receipt: [verification/LIVE_ACCEPTANCE_20260921.json](verification/LIVE_ACCEPTANCE_20260921.json)
-- Deployment and actual authorization: https://github.com/josepha-mayo/Recount/actions/runs/35630443331
-- Initial live voice acceptance: https://github.com/josepha-mayo/Recount/actions/runs/35630591053
-- Second capture and stock narration: https://github.com/josepha-mayo/Recount/actions/runs/35631975985
+- Demo platform: Other (Netlify)
+- Category: Productivity
+- Technology: rest api. AssemblyAI was not available in the observed selector; it remains explicit in the description and architecture.
 
-## Current media
+Title: 29 characters. Short description: 203 characters. Long description: 1861 characters and 264 whitespace-delimited words.
 
-The September 21 package contains `Recount-Cover.jpg`, `Recount-Presentation.pdf`, editable `Recount-Presentation.pptx`, `Recount-Walkthrough.mp4`, captions and supporting evidence. These files replace older recovery-only media. The walkthrough explicitly identifies generated test input and added stock narration. An unedited browser recording and the exact CSV are retained in the package's evidence folder.
+## Current proof
 
-The current slide deck describes the deployed correction/confirmation workflow and the verified integration, while retaining the two failed human holdouts. The video is a presentation of observed integration behavior, not a new human trial. No public video-host watch URL or completed media upload is asserted.
+[Live closeout acceptance](verification/CLOSEOUT_LIVE_ACCEPTANCE_20260922.json), [actual run 35771644932](https://github.com/josepha-mayo/Recount/actions/runs/35771644932).
 
-## Private judge handling
+The session was deliberately saved and reopened. Do not imply automatic autosave/crash recovery. Three final rows used spoken confirmation and Beans used the on-screen control. Do not label the run voice-only or human-validated. The earlier human holdouts and failed checks remain preserved.
 
-Text/review mode is open. Voice requires the existing private judge code and explicit microphone consent. Supply the code only through a field explicitly private to judges or an organizer-approved private channel. Never put the code in public descriptions, screenshots, source or recordings.
+## Current media and judge access
 
-The sample interaction is Rice twelve bags, a correction to thirteen, deliberately wrong confirmation of twelve, then confirmation of thirteen. Wait for each read-back before continuing. The fixed deployment uses the same code previously supplied privately; no additional credential setup or rotation is required.
+The new eight-slide presentation and narrated multi-item walkthrough replace the previous 'twelve/no/thirteen' media. The edited footage is from the actual public-site test. Microphone input and added narration use stock synthesis; the soundtrack is not the original browser audio or Joseph's voice. The unedited recording and handoff/CSV evidence accompany the package.
 
-## Remaining submission checks
-
-Review the files; check the actual form's media and field limits; complete the existing team's form and required uploads; provide judge access privately; and read back the final submission confirmation. Neither a prepared asset bundle, green test run nor team creation is a final submission receipt. Interactive physical-device human acceptance remains unverified.
-
-The older September 20 credential-setup blockers are superseded by the passing September 21 deployment and live receipts above. Historical failed attempts and human results are preserved, not reclassified.
+Keep old uploaded media intact until replacements are available. Final submission must use matching current media and copy. The existing private judge code must only be entered in a field explicitly private to judges or another organizer-approved private channel, never in this document or public media. Additional-information labels alone do not prove privacy.
